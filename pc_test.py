@@ -15,7 +15,7 @@ class Canvas(scene.SceneCanvas):
         self.view = self.central_widget.add_view()
 
         # generate data
-        pos = np.random.normal(size=(100000, 3), scale=0.2)
+        self.pos = np.random.normal(size=(100000, 3), scale=0.2)
         # one could stop here for the data generation, the rest is just to make the
         # data look more interesting. Copied over from magnify.py
         centers = np.random.normal(size=(50, 3))
@@ -23,17 +23,20 @@ class Canvas(scene.SceneCanvas):
                                    scale=centers.shape[0]/3.)
         indexes = np.clip(indexes, 0, centers.shape[0]-1).astype(int)
         scales = 10**(np.linspace(-2, 0.5, centers.shape[0]))[indexes][:, np.newaxis]
-        pos *= scales
-        pos += centers[indexes]
+        self.pos *= scales
+        self.pos += centers[indexes]
         # initialize all white
-        colors = vispy.color.ColorArray(np.ones((pos.shape[0], 3)))
-        colors[:50000] = vispy.color.Color('red')
+        self.colors = vispy.color.ColorArray(np.ones((self.pos.shape[0], 3)), alpha=1)
+        self.colors[:50000] = vispy.color.Color('red', alpha=1)
+
+        self.target_z = 0
+        self.compute_visible
 
         # create scatter object and fill in the data
-        scatter = visuals.Markers()
-        scatter.set_data(pos, edge_color=None, face_color=colors, size=5)
+        self.scatter = visuals.Markers()
+        self.scatter.set_data(self.pos, edge_color=None, face_color=self.colors, size=5)
 
-        self.view.add(scatter)
+        self.view.add(self.scatter)
 
         self.view.camera = vispy.scene.PanZoomCamera(aspect=1)
         self.view.camera._viewbox.events.mouse_move.disconnect(
@@ -48,7 +51,7 @@ class Canvas(scene.SceneCanvas):
         #color = 0
         #def update(ev):
         #    global scatter, color
-        #    scatter.set_data(pos, edge_color=None, face_color=(1, color, 1, .5), size=5)
+        #    scatter.set_data(self.pos, edge_color=None, face_color=(1, color, 1, .5), size=5)
         #    color += 0.01
         #    if color > 1:
         #        color = 0
@@ -58,6 +61,16 @@ class Canvas(scene.SceneCanvas):
         #timer.start(0)
         self.freeze()
 
+    def compute_visible(self):
+        visible = self.pos[:, 2] <= self.target_z
+        if np.any(visible):
+            self.colors[visible] = vispy.color.ColorArray(self.colors[visible], alpha=1)
+        if not np.all(visible):
+            self.colors[np.invert(visible)] = vispy.color.ColorArray(self.colors[np.invert(visible)], alpha=0)
+
+    def redraw(self):
+        self.scatter.set_data(self.pos, edge_color=None, face_color=self.colors, size=5)
+
     def on_mouse_move(self, event):
         # only care if click and drag
         if event.button == 1:
@@ -66,8 +79,11 @@ class Canvas(scene.SceneCanvas):
             print("mouse drag")
 
     def on_mouse_wheel(self, event):
-        self.view.camera._viewbox.events.mouse_wheel.connect(
-            self.view.camera.viewbox_mouse_event)
+        #self.view.camera._viewbox.events.mouse_wheel.connect(
+        #    self.view.camera.viewbox_mouse_event)
+        self.target_z += event.delta[1]*0.1
+        self.compute_visible()
+        self.redraw()
         print("scroll delta: " + str(event.delta))
 
     def on_key_press(self, event):
