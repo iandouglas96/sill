@@ -1,6 +1,6 @@
-## SILL: Semantic Integrated LiDAR Labelling
+# SILL: Semantic Integrated LiDAR Labelling
 
-# Dependencies
+## Dependencies
 * VisPy
 * ROS
 * NumPy
