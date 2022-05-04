@@ -30,7 +30,7 @@ class Canvas(scene.SceneCanvas):
 
         self.target_z = 0
         self.pan_zoom_mode = False
-        self.compute_visible
+        self.compute_visible()
 
         # create scatter object and fill in the data
         self.scatter = visuals.Markers()
