@@ -7,3 +7,5 @@
 *.svg
 .idea
 __pycache__
+labels
+scans
