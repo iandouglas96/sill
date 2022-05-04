@@ -1,0 +1,8 @@
+*.vim
+*.swp
+*.zip
+*.json
+*.png
+*.jpg
+*.svg
+.idea
