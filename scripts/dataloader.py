@@ -43,6 +43,7 @@ class DataLoader:
             else:
                 if msg.header.stamp.to_nsec() > self.last_stamp_ + self.spacing_sec_*1e9:
                     if msg.header.stamp.to_nsec() > stamp + 1e5:
+                        # reset
                         stamp = msg.header.stamp.to_nsec()
                         data = [None, None, None]
 
