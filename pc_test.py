@@ -27,14 +27,14 @@ class Canvas(scene.SceneCanvas):
         self.pos += centers[indexes]
         # initialize all white
         self.colors = vispy.color.ColorArray(np.ones((self.pos.shape[0], 3)), alpha=1)
-        self.colors[:50000] = vispy.color.Color('red', alpha=1)
 
         self.target_z = 0
+        self.pan_zoom_mode = False
         self.compute_visible
 
         # create scatter object and fill in the data
         self.scatter = visuals.Markers()
-        self.scatter.set_data(self.pos, edge_color=None, face_color=self.colors, size=5)
+        self.redraw()
 
         self.view.add(self.scatter)
 
@@ -71,23 +71,41 @@ class Canvas(scene.SceneCanvas):
     def redraw(self):
         self.scatter.set_data(self.pos, edge_color=None, face_color=self.colors, size=5)
 
+    def label(self, pos, eps):
+        in_range = np.linalg.norm(self.pos[:, :2] - pos, axis=1) < eps
+        if np.any(in_range):
+            self.colors[in_range] = vispy.color.Color('red')
+
     def on_mouse_move(self, event):
         # only care if click and drag
-        if event.button == 1:
-            self.view.camera._viewbox.events.mouse_move.connect(
-                self.view.camera.viewbox_mouse_event)
-            print("mouse drag")
+        if event.button == 1 and not self.pan_zoom_mode:
+            tr = self.scene.node_transform(self.scatter)
+            pos = tr.map(event.pos)
+            self.label(pos[:2], eps=0.1)
+            self.compute_visible()
+            self.redraw()
 
     def on_mouse_wheel(self, event):
-        #self.view.camera._viewbox.events.mouse_wheel.connect(
-        #    self.view.camera.viewbox_mouse_event)
-        self.target_z += event.delta[1]*0.1
-        self.compute_visible()
-        self.redraw()
-        print("scroll delta: " + str(event.delta))
+        if not self.pan_zoom_mode:
+            self.target_z -= event.delta[1]*0.1
+            self.compute_visible()
+            self.redraw()
 
     def on_key_press(self, event):
-        print("key: " + event.text)
+        if event.key == 'M':
+            self.pan_zoom_mode = True
+            self.view.camera._viewbox.events.mouse_move.connect(
+                self.view.camera.viewbox_mouse_event)
+            self.view.camera._viewbox.events.mouse_wheel.connect(
+                self.view.camera.viewbox_mouse_event)
+
+    def on_key_release(self, event):
+        if event.key == 'M':
+            self.pan_zoom_mode = False
+            self.view.camera._viewbox.events.mouse_move.disconnect(
+                self.view.camera.viewbox_mouse_event)
+            self.view.camera._viewbox.events.mouse_wheel.disconnect(
+                self.view.camera.viewbox_mouse_event)
 
 if __name__ == '__main__':
     import sys
