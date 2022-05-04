@@ -2,6 +2,8 @@ import numpy as np
 from dataloader import DataLoader
 from vispy.color import Color, ColorArray
 from scipy.spatial.transform import Rotation
+import cv2
+from pathlib import Path
 
 COLOR_LUT = [Color([1, 1, 1]),
              Color([0, 0, 1]),
@@ -13,7 +15,7 @@ COLOR_LUT = [Color([1, 1, 1]),
 class IntegratedCloud:
     def __init__(self, bagpath):
         self.loader_ = DataLoader(bagpath).__iter__()
-        self.block_size_ = 1
+        self.block_size_ = 10
         self.reset()
         self.add_new()
 
@@ -21,25 +23,38 @@ class IntegratedCloud:
         self.cloud_ = np.empty([0, 4], dtype=np.float32)
         # label, elevation when labelled
         self.labels_ = np.empty([0, 2], dtype=np.float32)
+        self.inds_ = np.empty([0, 1], dtype=np.int32)
+        self.imgs_ = []
         self.render_block_indices_ = np.empty([0, 1], dtype=np.int32)
         self.colors_ = None
         self.target_z_ = 0
         self.root_transform_ = None 
 
-    def write(self):
-        pass
+    def write(self, directory = Path('.')):
+        label_dir = directory / 'labels'
+        label_dir.mkdir(exist_ok = True)
+        scan_dir = directory / 'scans'
+        scan_dir.mkdir(exist_ok = True)
+        for ind, img in enumerate(self.imgs_):
+            # use tiff since can handle a 4 channel floating point image
+            cv2.imwrite((scan_dir / f'scan_{ind}.tiff').as_posix(), img)
+            img_labels = self.labels_[self.inds_[:, 0] == ind, 0].reshape(img.shape[:2])
+            cv2.imwrite((label_dir / f'label_{ind}.png').as_posix(), img_labels*100)
 
     def add_new(self):
         pc, pose, img, info = self.loader_.__next__()
         if self.root_transform_ is None:
             self.root_transform_ = pose
 
+        scan_ind = len(self.imgs_)
+        self.imgs_.append(img)
         # transform cloud
         pc_trans = pc.copy()
         comb_pose = {'R': self.root_transform_['R'].inv() * pose['R'], 
                      'T': self.root_transform_['R'].inv().apply(pose['T'] - self.root_transform_['T'])}
         pc_trans[:, :3] = comb_pose['R'].apply(pc[:, :3]) + comb_pose['T']
         self.cloud_ = np.vstack((self.cloud_, pc_trans))
+        self.inds_ = np.vstack((self.inds_, np.ones([pc.shape[0], 1])*scan_ind))
         self.labels_ = np.vstack((self.labels_, np.repeat(np.array([[0, 1000]]), pc.shape[0], axis=0)))
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
 
@@ -55,7 +70,7 @@ class IntegratedCloud:
 
     def get_block_ind(self, pts):
         inds = (pts / self.block_size_).astype(np.int32)
-        return inds[:,0] + inds[:,1] << 16
+        return inds[:,0] + (inds[:,1] << 16)
 
     def get_block_neighborhood(self, pt):
         pts = np.stack((pt,
@@ -93,3 +108,6 @@ class IntegratedCloud:
 
     def colors(self, block):
         return self.colors_[self.render_block_indices_[:,0] == block]
+
+    def get_z(self):
+        return self.target_z_

@@ -19,12 +19,14 @@ class SillCanvas(scene.SceneCanvas):
         self.cloud_render_ = {}
         self.last_mouse_point_ = np.zeros(2)
         self.current_class_ = 1
+        self.updated_z_ = True
 
-        self.text_ = scene.visuals.Text(f"Current class: {self.current_class_}",
+        self.text_ = scene.visuals.Text("Status",
                                         color='black',
                                         anchor_x='left',
                                         parent=self.view_,
                                         pos=(20, 30))
+        self.update_text()
 
         self.cursor_size_ = 50
         self.cursor_ = scene.visuals.Ellipse(center = (0, 0), radius = (self.cursor_size_,)*2, 
@@ -56,6 +58,8 @@ class SillCanvas(scene.SceneCanvas):
 
                 self.cloud_render_[ind].set_data(self.cloud_.cloud(ind), 
                         edge_color=None, edge_width=0, face_color=self.cloud_.colors(ind), size=5)
+            self.updated_z_ = True
+            self.update_text()
         else:
             inds = self.cloud_.get_block_neighborhood(pt)
             for ind in inds:
@@ -63,9 +67,14 @@ class SillCanvas(scene.SceneCanvas):
                     self.cloud_render_[ind].set_data(self.cloud_.cloud(ind), 
                             edge_color=None, edge_width=0, face_color=self.cloud_.colors(ind), size=5)
 
+    def update_text(self):
+        self.text_.text = f"Current class: {self.current_class_}\n" + \
+                          f"Current elevation: {self.cloud_.get_z()}\n" + \
+                          f"Updated elev: {self.updated_z_}"
+
     def set_class(self, cls):
         self.current_class_ = cls
-        self.text_.text = f"Current class: {self.current_class_}"
+        self.update_text()
 
     def on_key_press(self, event):
         if event.key == 'R':
@@ -112,6 +121,8 @@ class SillCanvas(scene.SceneCanvas):
     def on_mouse_wheel(self, event):
         if not self.pan_zoom_mode_:
             self.cloud_.adjust_z(-event.delta[1]*0.1)
+            self.updated_z_ = False
+            self.update_text()
 
     def on_mouse_move(self, event):
         # only care if click and drag
