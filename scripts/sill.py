@@ -80,6 +80,14 @@ class SillCanvas(scene.SceneCanvas):
                 self.view_.camera.viewbox_mouse_event)
             self.view_.camera._viewbox.events.mouse_wheel.connect(
                 self.view_.camera.viewbox_mouse_event)
+        elif event.key == 'W':
+            self.cloud_.write()
+            self.cloud_.reset()
+            # clear screen
+            for key in self.cloud_render_.keys():
+                self.cloud_render_[key].parent = None
+            self.redraw()
+            self.cloud_render_ = {}
         elif event.key == '0':
             self.set_class(0)
         elif event.key == '1':

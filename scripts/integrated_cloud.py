@@ -1,6 +1,7 @@
 import numpy as np
 from dataloader import DataLoader
 from vispy.color import Color, ColorArray
+from scipy.spatial.transform import Rotation
 
 COLOR_LUT = [Color([1, 1, 1]),
              Color([0, 0, 1]),
@@ -12,20 +13,32 @@ COLOR_LUT = [Color([1, 1, 1]),
 class IntegratedCloud:
     def __init__(self, bagpath):
         self.loader_ = DataLoader(bagpath).__iter__()
+        self.block_size_ = 1
+        self.reset()
+        self.add_new()
+
+    def reset(self):
         self.cloud_ = np.empty([0, 4], dtype=np.float32)
         # label, elevation when labelled
         self.labels_ = np.empty([0, 2], dtype=np.float32)
         self.render_block_indices_ = np.empty([0, 1], dtype=np.int32)
-        self.block_size_ = 1
         self.colors_ = None
         self.target_z_ = 0
-        self.add_new()
+        self.root_transform_ = None 
+
+    def write(self):
+        pass
 
     def add_new(self):
         pc, pose, img, info = self.loader_.__next__()
+        if self.root_transform_ is None:
+            self.root_transform_ = pose
+
         # transform cloud
         pc_trans = pc.copy()
-        pc_trans[:, :3] = pose['R'].apply(pc[:, :3]) + pose['T']
+        comb_pose = {'R': self.root_transform_['R'].inv() * pose['R'], 
+                     'T': self.root_transform_['R'].inv().apply(pose['T'] - self.root_transform_['T'])}
+        pc_trans[:, :3] = comb_pose['R'].apply(pc[:, :3]) + comb_pose['T']
         self.cloud_ = np.vstack((self.cloud_, pc_trans))
         self.labels_ = np.vstack((self.labels_, np.repeat(np.array([[0, 1000]]), pc.shape[0], axis=0)))
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
