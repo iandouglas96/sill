@@ -3,6 +3,7 @@
 import argparse
 import numpy as np
 from vispy import app, scene
+from vispy.color import Color, ColorArray
 from queue import Queue
 from threading import Thread
 from integrated_cloud import IntegratedCloud
@@ -17,6 +18,17 @@ class SillCanvas(scene.SceneCanvas):
         self.cloud_ = IntegratedCloud(bagpath)
         self.cloud_render_ = {}
         self.last_mouse_point_ = np.zeros(2)
+        self.current_class_ = 1
+
+        self.text_ = scene.visuals.Text(f"Current class: {self.current_class_}",
+                                        color='black',
+                                        anchor_x='left',
+                                        parent=self.view_,
+                                        pos=(20, 30))
+
+        self.cursor_size_ = 50
+        self.cursor_ = scene.visuals.Ellipse(center = (0, 0), radius = (self.cursor_size_,)*2, 
+                color=Color(alpha=0), border_color=Color('black'), border_width=5, parent=self.view_)
 
         # disconnect camera, cannot pan/zoom by default
         self.view_.camera = scene.PanZoomCamera(aspect=1)
@@ -51,6 +63,10 @@ class SillCanvas(scene.SceneCanvas):
                     self.cloud_render_[ind].set_data(self.cloud_.cloud(ind), 
                             edge_color=None, edge_width=0, face_color=self.cloud_.colors(ind), size=5)
 
+    def set_class(self, cls):
+        self.current_class_ = cls
+        self.text_.text = f"Current class: {self.current_class_}"
+
     def on_key_press(self, event):
         if event.key == 'R':
             self.redraw()
@@ -64,6 +80,18 @@ class SillCanvas(scene.SceneCanvas):
                 self.view_.camera.viewbox_mouse_event)
             self.view_.camera._viewbox.events.mouse_wheel.connect(
                 self.view_.camera.viewbox_mouse_event)
+        elif event.key == '0':
+            self.set_class(0)
+        elif event.key == '1':
+            self.set_class(1)
+        elif event.key == '2':
+            self.set_class(2)
+        elif event.key == '3':
+            self.set_class(3)
+        elif event.key == '4':
+            self.set_class(4)
+        elif event.key == '5':
+            self.set_class(5)
 
     def on_key_release(self, event):
         if event.key == 'M':
@@ -82,9 +110,11 @@ class SillCanvas(scene.SceneCanvas):
         if event.button == 1 and not self.pan_zoom_mode_:
             tr = self.scene.node_transform(self.axis_)
             pos = tr.map(event.pos)[:2]
-            if np.linalg.norm(pos - self.last_mouse_point_) > 1:
+            eps = np.linalg.norm(tr.map(event.pos + np.array([self.cursor_size_, 0]))[:2] - pos)
+
+            if np.linalg.norm(pos - self.last_mouse_point_) > eps*0.2:
                 start_t = perf_counter()
-                self.cloud_.label(pos, 1)
+                self.cloud_.label(pos, self.current_class_, eps)
                 label_t = perf_counter()
                 self.redraw(pos)
                 redraw_t = perf_counter()
@@ -93,6 +123,8 @@ class SillCanvas(scene.SceneCanvas):
                 print(f"render: {redraw_t - label_t}")
 
                 self.last_mouse_point_ = pos
+
+        self.cursor_.center = event.pos[:2]
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()

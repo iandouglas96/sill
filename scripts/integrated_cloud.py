@@ -2,6 +2,13 @@ import numpy as np
 from dataloader import DataLoader
 from vispy.color import Color, ColorArray
 
+COLOR_LUT = [Color([1, 1, 1]),
+             Color([0, 0, 1]),
+             Color([0, 1, 0]),   
+             Color([1, 0, 0]),   
+             Color([0, 0.4, 0]),   
+             Color([0, 1, 1])]   
+
 class IntegratedCloud:
     def __init__(self, bagpath):
         self.loader_ = DataLoader(bagpath).__iter__()
@@ -20,7 +27,7 @@ class IntegratedCloud:
         pc_trans = pc.copy()
         pc_trans[:, :3] = pose['R'].apply(pc[:, :3]) + pose['T']
         self.cloud_ = np.vstack((self.cloud_, pc_trans))
-        self.labels_ = np.vstack((self.labels_, -1000*np.ones((pc.shape[0], 2))))
+        self.labels_ = np.vstack((self.labels_, np.repeat(np.array([[0, 1000]]), pc.shape[0], axis=0)))
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
 
         self.render_block_indices_ = np.vstack((self.render_block_indices_, 
@@ -61,11 +68,12 @@ class IntegratedCloud:
 
     def label(self, pos, label, eps=1):
         to_update = np.logical_and(
-                np.logical_and(self.cloud_[:, 2] > self.labels_[:, 1], self.cloud_[:, 2] <= self.target_z_),
+                np.logical_and(self.target_z_ <= self.labels_[:, 1], 
+                               self.cloud_[:, 2] <= self.target_z_),
                 np.linalg.norm(self.cloud_[:, :2] - pos, axis=1) < eps)
         if np.any(to_update):
             self.labels_[to_update] = np.array([label, self.target_z_])
-            self.colors_[to_update] = Color('red')
+            self.colors_[to_update] = COLOR_LUT[label]
 
     def cloud(self, block):
         return self.cloud_[self.render_block_indices_[:,0] == block, :2]
