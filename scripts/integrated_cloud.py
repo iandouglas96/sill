@@ -117,7 +117,11 @@ class IntegratedCloud:
             label_dir = self.directory_ / 'labels'
             label_img = cv2.imread((label_dir / f'{info.header.stamp.to_nsec()}.png').as_posix())
             if label_img is not None:
-                flattened_labels = label_img[:,:,0].flatten()
+                label_undist = label_img.copy()
+                # shift back
+                for row, shift in enumerate(info.D):
+                    label_undist[row, :] = np.roll(label_img[row, :], -int(shift), axis=0)
+                flattened_labels = label_undist[:,:,0].flatten()
                 self.labels_[self.inds_[:, 0] == scan_ind, 0] = flattened_labels
                 for label in np.unique(label_img):
                     new_colors[flattened_labels == label] = COLOR_LUT[label]
