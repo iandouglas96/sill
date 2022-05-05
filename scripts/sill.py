@@ -47,6 +47,7 @@ class SillCanvas(scene.SceneCanvas):
 
     def redraw(self, pt=None):
         if pt is None:
+            self.cloud_.adjust_z(0, update=True)
             for ind in self.cloud_.get_indices():
                 if ind not in self.cloud_render_.keys():
                     new_cloud_render = scene.visuals.Markers(edge_width = 0)
@@ -120,7 +121,7 @@ class SillCanvas(scene.SceneCanvas):
 
     def on_mouse_wheel(self, event):
         if not self.pan_zoom_mode_:
-            self.cloud_.adjust_z(-event.delta[1]*0.1)
+            self.cloud_.adjust_z(-event.delta[1]*0.1, update=False)
             self.updated_z_ = False
             self.update_text()
 
@@ -138,8 +139,8 @@ class SillCanvas(scene.SceneCanvas):
                 self.redraw(pos)
                 redraw_t = perf_counter()
                 
-                print(f"label: {label_t - start_t}")
-                print(f"render: {redraw_t - label_t}")
+                #print(f"label: {label_t - start_t}")
+                #print(f"render: {redraw_t - label_t}")
 
                 self.last_mouse_point_ = pos
 

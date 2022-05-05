@@ -5,17 +5,25 @@ from scipy.spatial.transform import Rotation
 import cv2
 from pathlib import Path
 
-COLOR_LUT = [Color([1, 1, 1]),
+COLOR_LUT = [Color([0, 0, 0]),
              Color([0, 0, 1]),
              Color([0, 1, 0]),   
              Color([1, 0, 0]),   
              Color([0, 0.4, 0]),   
              Color([0, 1, 1])]   
 
+def get_cv_lut(lut):
+    lut = np.zeros((256, 1, 3), dtype=np.uint8)
+    for ind, color in enumerate(COLOR_LUT):
+        # flip to bgr
+        lut[ind, 0, :] = np.flip(color.RGB)
+    return lut
+
 class IntegratedCloud:
     def __init__(self, bagpath):
         self.loader_ = DataLoader(bagpath).__iter__()
         self.block_size_ = 10
+        self.cv_lut_ = get_cv_lut(COLOR_LUT)
         self.reset()
         self.add_new()
 
@@ -25,6 +33,7 @@ class IntegratedCloud:
         self.labels_ = np.empty([0, 2], dtype=np.float32)
         self.inds_ = np.empty([0, 1], dtype=np.int32)
         self.imgs_ = []
+        self.info_ = []
         self.render_block_indices_ = np.empty([0, 1], dtype=np.int32)
         self.colors_ = None
         self.target_z_ = 0
@@ -35,11 +44,28 @@ class IntegratedCloud:
         label_dir.mkdir(exist_ok = True)
         scan_dir = directory / 'scans'
         scan_dir.mkdir(exist_ok = True)
+
         for ind, img in enumerate(self.imgs_):
-            # use tiff since can handle a 4 channel floating point image
-            cv2.imwrite((scan_dir / f'scan_{ind}.tiff').as_posix(), img)
             img_labels = self.labels_[self.inds_[:, 0] == ind, 0].reshape(img.shape[:2])
-            cv2.imwrite((label_dir / f'label_{ind}.png').as_posix(), img_labels*100)
+            # destagger
+            img_undist = img.copy()
+            label_undist = img_labels.copy()
+            for row, shift in enumerate(self.info_[0].D):
+                img_undist[row, :, :] = np.roll(img[row, :, :], int(shift), axis=0)
+                label_undist[row, :] = np.roll(img_labels[row, :], int(shift), axis=0)
+
+            # use tiff since can handle a 4 channel floating point image
+            stamp = self.info_[ind].header.stamp.to_nsec()
+            cv2.imwrite((scan_dir / f'scan_{stamp}.tiff').as_posix(), img_undist)
+
+            cv2.imwrite((label_dir / f'label_{stamp}.png').as_posix(), label_undist)
+            range_img = np.linalg.norm(img_undist[:, :, :3]*10, axis=2).astype(np.uint8)
+            range_img_color = cv2.cvtColor(range_img, cv2.COLOR_GRAY2BGR)
+            label_undist_color = cv2.cvtColor(label_undist.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+            label_viz = cv2.LUT(label_undist_color, self.cv_lut_)
+            cv2.imwrite((label_dir / f'label_viz_{stamp}.png').as_posix(), 
+                    cv2.addWeighted(range_img_color, 0.5, label_viz, 0.5, 0))
+        print(f"Labels written to disk at {directory.as_posix()}")
 
     def add_new(self):
         pc, pose, img, info = self.loader_.__next__()
@@ -48,6 +74,8 @@ class IntegratedCloud:
 
         scan_ind = len(self.imgs_)
         self.imgs_.append(img)
+        self.info_.append(info)
+
         # transform cloud
         pc_trans = pc.copy()
         comb_pose = {'R': self.root_transform_['R'].inv() * pose['R'], 
@@ -83,14 +111,17 @@ class IntegratedCloud:
     def get_indices(self):
         return np.unique(self.render_block_indices_)
 
-    def adjust_z(self, delta):
+    def adjust_z(self, delta, update=True):
         self.target_z_ += delta
+        if not update:
+            return
+
         visible = self.cloud_[:, 2] <= self.target_z_
         labelled_below = np.logical_and(self.labels_[:, 1] < self.target_z_, self.labels_[:, 0] > 0)
         if np.any(visible):
             self.colors_[visible] = ColorArray(self.colors_[visible], alpha=1)
         if np.any(labelled_below):
-            self.colors_[labelled_below] = ColorArray(self.colors_[labelled_below], alpha=0.3)
+            self.colors_[labelled_below] = ColorArray(self.colors_[labelled_below], alpha=0.1)
         if not np.all(visible):
             self.colors_[np.invert(visible)] = ColorArray(self.colors_[np.invert(visible)], alpha=0)
 
