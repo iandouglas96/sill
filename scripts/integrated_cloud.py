@@ -175,7 +175,7 @@ class IntegratedCloud:
             self.colors_[to_update] = COLOR_LUT[label]
 
     def cloud(self, block):
-        return self.cloud_[self.render_block_indices_[:,0] == block, :2]
+        return self.cloud_[self.render_block_indices_[:,0] == block, :3]
 
     def colors(self, block):
         return self.colors_[self.render_block_indices_[:,0] == block]
