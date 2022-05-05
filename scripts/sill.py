@@ -91,8 +91,6 @@ class SillCanvas(scene.SceneCanvas):
             self.pan_zoom_mode_ = True
             self.view_.camera._viewbox.events.mouse_move.connect(
                 self.view_.camera.viewbox_mouse_event)
-            self.view_.camera._viewbox.events.mouse_wheel.connect(
-                self.view_.camera.viewbox_mouse_event)
         elif event.key == 'W':
             self.cloud_.write()
             self.cloud_.reset()
@@ -116,8 +114,6 @@ class SillCanvas(scene.SceneCanvas):
         if event.key == 'M':
             self.pan_zoom_mode_ = False
             self.view_.camera._viewbox.events.mouse_move.disconnect(
-                self.view_.camera.viewbox_mouse_event)
-            self.view_.camera._viewbox.events.mouse_wheel.disconnect(
                 self.view_.camera.viewbox_mouse_event)
 
     def on_mouse_move(self, event):
