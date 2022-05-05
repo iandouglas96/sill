@@ -4,6 +4,7 @@
 * VisPy
 * ROS
 * NumPy
+* SciPy
 
 ## Usage
 
