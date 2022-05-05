@@ -37,7 +37,7 @@ class SillCanvas(scene.SceneCanvas):
         self.view_.camera = scene.PanZoomCamera(aspect=1)
         self.view_.camera._viewbox.events.mouse_move.disconnect(
             self.view_.camera.viewbox_mouse_event)
-        self.pan_zoom_mode_ = False
+        self.mode_ = 'label'
 
         self.axis_ = scene.visuals.XYZAxis(parent=self.view_.scene)
         self.redraw()
@@ -87,8 +87,8 @@ class SillCanvas(scene.SceneCanvas):
             self.index_ += 10
             self.redraw()
             self.update_text()
-        elif event.key == 'M':
-            self.pan_zoom_mode_ = True
+        elif event.key == 'M' and self.mode_ == 'label':
+            self.mode_ = 'view2' 
             self.view_.camera._viewbox.events.mouse_move.connect(
                 self.view_.camera.viewbox_mouse_event)
         elif event.key == 'W':
@@ -107,18 +107,26 @@ class SillCanvas(scene.SceneCanvas):
             self.cloud_.adjust_z(-0.5, update=False)
             self.updated_z_ = False
             self.update_text()
+        elif event.key == 'O':
+            self.mode_ = 'view3'
+            self.view_.camera = scene.TurntableCamera()
+        elif event.key == 'L':
+            self.mode_ = 'label'
+            self.view_.camera = scene.PanZoomCamera(aspect=1)
+            self.view_.camera._viewbox.events.mouse_move.disconnect(
+                self.view_.camera.viewbox_mouse_event)
         elif event.text.isnumeric():
             self.set_class(int(event.text))
 
     def on_key_release(self, event):
-        if event.key == 'M':
-            self.pan_zoom_mode_ = False
+        if event.key == 'M' and self.mode_ == 'view2':
+            self.mode_ = 'label'
             self.view_.camera._viewbox.events.mouse_move.disconnect(
                 self.view_.camera.viewbox_mouse_event)
 
     def on_mouse_move(self, event):
         # only care if click and drag
-        if event.button == 1 and not self.pan_zoom_mode_:
+        if event.button == 1 and self.mode_ == 'label':
             tr = self.scene.node_transform(self.axis_)
             pos = tr.map(event.pos)[:2]
             eps = np.linalg.norm(tr.map(event.pos + np.array([self.cursor_size_, 0]))[:2] - pos)
