@@ -5,12 +5,21 @@ from scipy.spatial.transform import Rotation
 import cv2
 from pathlib import Path
 
-COLOR_LUT = [Color([0, 0, 0]),
-             Color([0, 0, 1]),
-             Color([0, 1, 0]),   
-             Color([1, 0, 0]),   
-             Color([0, 0.4, 0]),   
-             Color([0, 1, 1])]   
+CLASS_LUT = ['unlabelled',
+             'road',
+             'tree',
+             'building', 
+             'grass',
+             'vehicle',
+             'human']
+
+COLOR_LUT = [Color([0, 0, 0]), # unlabelled
+             Color([0, 0, 1]), # road
+             Color([0, 1, 0]), # tree
+             Color([1, 0, 0]), # building
+             Color([0, 0.4, 0]), # grass
+             Color([0, 1, 1]), # vehicle
+             Color([1, 0, 1])] # human
 
 def get_cv_lut(lut):
     lut = np.zeros((256, 1, 3), dtype=np.uint8)
@@ -20,12 +29,17 @@ def get_cv_lut(lut):
     return lut
 
 class IntegratedCloud:
-    def __init__(self, bagpath):
+    def __init__(self, bagpath, start_ind):
         self.loader_ = DataLoader(bagpath).__iter__()
         self.block_size_ = 10
+        self.start_ind_ = start_ind
         self.cv_lut_ = get_cv_lut(COLOR_LUT)
         self.reset()
         self.add_new()
+
+    def go_to_start(self):
+        for _ in range(self.start_ind_):
+            self.loader_.__next__()
 
     def reset(self):
         self.cloud_ = np.empty([0, 4], dtype=np.float32)
@@ -38,6 +52,7 @@ class IntegratedCloud:
         self.colors_ = None
         self.target_z_ = 0
         self.root_transform_ = None 
+        self.go_to_start()
 
     def write(self, directory = Path('.')):
         label_dir = directory / 'labels'
@@ -68,7 +83,12 @@ class IntegratedCloud:
         print(f"Labels written to disk at {directory.as_posix()}")
 
     def add_new(self):
-        pc, pose, img, info = self.loader_.__next__()
+        try:
+            pc, pose, img, info = self.loader_.__next__()
+        except StopIteration:
+            print("REACHED END OF BAG")
+            return
+
         if self.root_transform_ is None:
             self.root_transform_ = pose
 

@@ -6,26 +6,27 @@ from vispy import app, scene
 from vispy.color import Color, ColorArray
 from queue import Queue
 from threading import Thread
-from integrated_cloud import IntegratedCloud
+from integrated_cloud import IntegratedCloud, COLOR_LUT, CLASS_LUT
 from time import perf_counter, time
 
 class SillCanvas(scene.SceneCanvas):
-    def __init__(self, bagpath):
+    def __init__(self, bagpath, start_ind = 0):
         scene.SceneCanvas.__init__(self, keys='interactive')
         self.unfreeze()
 
         self.view_ = self.central_widget.add_view(bgcolor='white')
-        self.cloud_ = IntegratedCloud(bagpath)
+        self.cloud_ = IntegratedCloud(bagpath, start_ind)
         self.cloud_render_ = {}
         self.last_mouse_point_ = np.zeros(2)
         self.current_class_ = 1
+        self.index_ = start_ind
         self.updated_z_ = True
 
         self.text_ = scene.visuals.Text("Status",
                                         color='black',
                                         anchor_x='left',
                                         parent=self.view_,
-                                        pos=(20, 30))
+                                        pos=(20, 50))
         self.update_text()
 
         self.cursor_size_ = 50
@@ -35,8 +36,6 @@ class SillCanvas(scene.SceneCanvas):
         # disconnect camera, cannot pan/zoom by default
         self.view_.camera = scene.PanZoomCamera(aspect=1)
         self.view_.camera._viewbox.events.mouse_move.disconnect(
-            self.view_.camera.viewbox_mouse_event)
-        self.view_.camera._viewbox.events.mouse_wheel.disconnect(
             self.view_.camera.viewbox_mouse_event)
         self.pan_zoom_mode_ = False
 
@@ -69,13 +68,15 @@ class SillCanvas(scene.SceneCanvas):
                             edge_color=None, edge_width=0, face_color=self.cloud_.colors(ind), size=5)
 
     def update_text(self):
-        self.text_.text = f"Current class: {self.current_class_}\n" + \
+        self.text_.text = f"Current class: {self.current_class_}: {CLASS_LUT[self.current_class_]}\n" + \
                           f"Current elevation: {self.cloud_.get_z()}\n" + \
-                          f"Updated elev: {self.updated_z_}"
+                          f"Updated elev: {self.updated_z_}\n" + \
+                          f"Index: {self.index_}"
 
     def set_class(self, cls):
-        self.current_class_ = cls
-        self.update_text()
+        if cls < len(COLOR_LUT):
+            self.current_class_ = cls
+            self.update_text()
 
     def on_key_press(self, event):
         if event.key == 'R':
@@ -83,7 +84,9 @@ class SillCanvas(scene.SceneCanvas):
         elif event.key == 'N':
             for _ in range(10):
                 self.cloud_.add_new()    
+            self.index_ += 10
             self.redraw()
+            self.update_text()
         elif event.key == 'M':
             self.pan_zoom_mode_ = True
             self.view_.camera._viewbox.events.mouse_move.connect(
@@ -98,18 +101,16 @@ class SillCanvas(scene.SceneCanvas):
                 self.cloud_render_[key].parent = None
             self.redraw()
             self.cloud_render_ = {}
-        elif event.key == '0':
-            self.set_class(0)
-        elif event.key == '1':
-            self.set_class(1)
-        elif event.key == '2':
-            self.set_class(2)
-        elif event.key == '3':
-            self.set_class(3)
-        elif event.key == '4':
-            self.set_class(4)
-        elif event.key == '5':
-            self.set_class(5)
+        elif event.key == 'PageUp':
+            self.cloud_.adjust_z(0.5, update=False)
+            self.updated_z_ = False
+            self.update_text()
+        elif event.key == 'PageDown':
+            self.cloud_.adjust_z(-0.5, update=False)
+            self.updated_z_ = False
+            self.update_text()
+        elif event.text.isnumeric():
+            self.set_class(int(event.text))
 
     def on_key_release(self, event):
         if event.key == 'M':
@@ -118,12 +119,6 @@ class SillCanvas(scene.SceneCanvas):
                 self.view_.camera.viewbox_mouse_event)
             self.view_.camera._viewbox.events.mouse_wheel.disconnect(
                 self.view_.camera.viewbox_mouse_event)
-
-    def on_mouse_wheel(self, event):
-        if not self.pan_zoom_mode_:
-            self.cloud_.adjust_z(-event.delta[1]*0.1, update=False)
-            self.updated_z_ = False
-            self.update_text()
 
     def on_mouse_move(self, event):
         # only care if click and drag
@@ -149,7 +144,8 @@ class SillCanvas(scene.SceneCanvas):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('bag')
+    parser.add_argument('--start', type=int, default=0)
     args = parser.parse_args()
 
-    sc = SillCanvas(args.bag)
+    sc = SillCanvas(args.bag, args.start)
     app.run()
