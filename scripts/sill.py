@@ -6,16 +6,16 @@ from vispy import app, scene
 from vispy.color import Color, ColorArray
 from queue import Queue
 from threading import Thread
-from integrated_cloud import IntegratedCloud, COLOR_LUT, CLASS_LUT
+from integrated_cloud import IntegratedCloud
 from time import perf_counter, time
 
 class SillCanvas(scene.SceneCanvas):
-    def __init__(self, bagpath, start_ind = 0, load = False):
+    def __init__(self, bagpath, start_ind = 0, period = 1, load = False):
         scene.SceneCanvas.__init__(self, keys='interactive')
         self.unfreeze()
 
         self.view_ = self.central_widget.add_view(bgcolor='white')
-        self.cloud_ = IntegratedCloud(bagpath, start_ind, load)
+        self.cloud_ = IntegratedCloud(bagpath, start_ind, period, load)
         self.cloud_render_ = {}
         self.last_mouse_point_ = np.zeros(2)
         self.current_class_ = 1
@@ -68,13 +68,13 @@ class SillCanvas(scene.SceneCanvas):
                             edge_color=None, edge_width=0, face_color=self.cloud_.colors(ind), size=5)
 
     def update_text(self):
-        self.text_.text = f"Current class: {self.current_class_}: {CLASS_LUT[self.current_class_]}\n" + \
+        self.text_.text = f"Current class: {self.current_class_}: {self.cloud_.class_lut_[self.current_class_]}\n" + \
                           f"Current elevation: {self.cloud_.get_z()}\n" + \
                           f"Updated elev: {self.updated_z_}\n" + \
                           f"Index: {self.index_}"
 
     def set_class(self, cls):
-        if cls < len(COLOR_LUT):
+        if cls < len(self.cloud_.class_lut_):
             self.current_class_ = cls
             self.update_text()
 
@@ -93,6 +93,7 @@ class SillCanvas(scene.SceneCanvas):
                 self.view_.camera.viewbox_mouse_event)
         elif event.key == 'W':
             self.cloud_.write()
+        elif event.key == 'X':
             self.cloud_.reset()
             # clear screen
             for key in self.cloud_render_.keys():
@@ -150,7 +151,8 @@ if __name__ == '__main__':
     parser.add_argument('bag')
     parser.add_argument('--start', type=int, default=0)
     parser.add_argument('--load', action='store_true')
+    parser.add_argument('--period', type=float, default=1)
     args = parser.parse_args()
 
-    sc = SillCanvas(args.bag, args.start, args.load)
+    sc = SillCanvas(args.bag, args.start, args.period, args.load)
     app.run()

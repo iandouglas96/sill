@@ -4,33 +4,19 @@ from vispy.color import Color, ColorArray
 from scipy.spatial.transform import Rotation
 import cv2
 from pathlib import Path
+import rospkg
+import yaml
 
-CLASS_LUT = ['unlabelled',
-             'road',
-             'tree',
-             'building', 
-             'grass',
-             'vehicle',
-             'human']
-
-COLOR_LUT = [Color([0, 0, 0]), # unlabelled
-             Color([0, 0, 1]), # road
-             Color([0, 1, 0]), # tree
-             Color([1, 0, 0]), # building
-             Color([0, 0.4, 0]), # grass
-             Color([0, 1, 1]), # vehicle
-             Color([1, 0, 1])] # human
-
-def get_cv_lut(lut):
+def get_cv_lut(color_lut):
     lut = np.zeros((256, 1, 3), dtype=np.uint8)
-    for ind, color in enumerate(COLOR_LUT):
+    for ind, color in enumerate(color_lut):
         # flip to bgr
         lut[ind, 0, :] = np.flip(color.RGB)
     return lut
 
 class IntegratedCloud:
-    def __init__(self, bagpath, start_ind, load, directory = None):
-        self.loader_ = DataLoader(bagpath).__iter__()
+    def __init__(self, bagpath, start_ind, period, load, directory = None):
+        self.loader_ = DataLoader(bagpath, period).__iter__()
         self.block_size_ = 10
         self.start_ind_ = start_ind
         self.load_ = load
@@ -39,9 +25,23 @@ class IntegratedCloud:
         else:
             self.directory_ = Path(bagpath).with_name(Path(bagpath).stem + '_labels')
         self.directory_.mkdir(exist_ok = True)
-        self.cv_lut_ = get_cv_lut(COLOR_LUT)
+        self.class_lut_, self.color_lut_ = self.load_luts()
+        self.cv_lut_ = get_cv_lut(self.color_lut_)
         self.reset()
         self.add_new()
+
+    def load_luts(self):
+        rospack = rospkg.RosPack()
+        package_path = Path(rospack.get_path('sill'))
+        config = yaml.load(open(package_path / Path('config') / Path('classes.yaml'), 'r'))
+        class_lut = []
+        color_lut = []
+
+        for cls in config:
+            class_lut.append(list(cls.keys())[0])
+            color_lut.append(Color(list(cls.values())[0]))
+
+        return class_lut, color_lut
 
     def go_to_start(self):
         for _ in range(self.start_ind_):
@@ -124,7 +124,7 @@ class IntegratedCloud:
                 flattened_labels = label_undist[:,:,0].flatten()
                 self.labels_[self.inds_[:, 0] == scan_ind, 0] = flattened_labels
                 for label in np.unique(label_img):
-                    new_colors[flattened_labels == label] = COLOR_LUT[label]
+                    new_colors[flattened_labels == label] = self.color_lut_[label]
 
         self.render_block_indices_ = np.vstack((self.render_block_indices_, 
             self.get_block_ind(pc_trans[:, :2])[:, None]))
@@ -172,7 +172,7 @@ class IntegratedCloud:
                 np.linalg.norm(self.cloud_[:, :2] - pos, axis=1) < eps)
         if np.any(to_update):
             self.labels_[to_update] = np.array([label, self.target_z_])
-            self.colors_[to_update] = COLOR_LUT[label]
+            self.colors_[to_update] = self.color_lut_[label]
 
     def cloud(self, block):
         return self.cloud_[self.render_block_indices_[:,0] == block, :3]
