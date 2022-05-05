@@ -29,10 +29,16 @@ def get_cv_lut(lut):
     return lut
 
 class IntegratedCloud:
-    def __init__(self, bagpath, start_ind):
+    def __init__(self, bagpath, start_ind, load, directory = None):
         self.loader_ = DataLoader(bagpath).__iter__()
         self.block_size_ = 10
         self.start_ind_ = start_ind
+        self.load_ = load
+        if directory is not None:
+            self.directory_ = Path(directory)
+        else:
+            self.directory_ = Path(bagpath).with_name(Path(bagpath).stem + '_labels')
+        self.directory_.mkdir(exist_ok = True)
         self.cv_lut_ = get_cv_lut(COLOR_LUT)
         self.reset()
         self.add_new()
@@ -54,10 +60,10 @@ class IntegratedCloud:
         self.root_transform_ = None 
         self.go_to_start()
 
-    def write(self, directory = Path('.')):
-        label_dir = directory / 'labels'
+    def write(self):
+        label_dir = self.directory_ / 'labels'
         label_dir.mkdir(exist_ok = True)
-        scan_dir = directory / 'scans'
+        scan_dir = self.directory_ / 'scans'
         scan_dir.mkdir(exist_ok = True)
 
         for ind, img in enumerate(self.imgs_):
@@ -71,16 +77,16 @@ class IntegratedCloud:
 
             # use tiff since can handle a 4 channel floating point image
             stamp = self.info_[ind].header.stamp.to_nsec()
-            cv2.imwrite((scan_dir / f'scan_{stamp}.tiff').as_posix(), img_undist)
+            cv2.imwrite((scan_dir / f'{stamp}.tiff').as_posix(), img_undist)
 
-            cv2.imwrite((label_dir / f'label_{stamp}.png').as_posix(), label_undist)
+            cv2.imwrite((label_dir / f'{stamp}.png').as_posix(), label_undist)
             range_img = np.linalg.norm(img_undist[:, :, :3]*10, axis=2).astype(np.uint8)
             range_img_color = cv2.cvtColor(range_img, cv2.COLOR_GRAY2BGR)
             label_undist_color = cv2.cvtColor(label_undist.astype(np.uint8), cv2.COLOR_GRAY2BGR)
             label_viz = cv2.LUT(label_undist_color, self.cv_lut_)
-            cv2.imwrite((label_dir / f'label_viz_{stamp}.png').as_posix(), 
+            cv2.imwrite((label_dir / f'viz_{stamp}.png').as_posix(), 
                     cv2.addWeighted(range_img_color, 0.5, label_viz, 0.5, 0))
-        print(f"Labels written to disk at {directory.as_posix()}")
+        print(f"Labels written to disk at {self.directory_.as_posix()}")
 
     def add_new(self):
         try:
@@ -103,8 +109,18 @@ class IntegratedCloud:
         pc_trans[:, :3] = comb_pose['R'].apply(pc[:, :3]) + comb_pose['T']
         self.cloud_ = np.vstack((self.cloud_, pc_trans))
         self.inds_ = np.vstack((self.inds_, np.ones([pc.shape[0], 1])*scan_ind))
+        # initialize to high z because can overwrite with low z
         self.labels_ = np.vstack((self.labels_, np.repeat(np.array([[0, 1000]]), pc.shape[0], axis=0)))
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
+
+        if self.load_:
+            label_dir = self.directory_ / 'labels'
+            label_img = cv2.imread((label_dir / f'{info.header.stamp.to_nsec()}.png').as_posix())
+            if label_img is not None:
+                flattened_labels = label_img[:,:,0].flatten()
+                self.labels_[self.inds_[:, 0] == scan_ind, 0] = flattened_labels
+                for label in np.unique(label_img):
+                    new_colors[flattened_labels == label] = COLOR_LUT[label]
 
         self.render_block_indices_ = np.vstack((self.render_block_indices_, 
             self.get_block_ind(pc_trans[:, :2])[:, None]))

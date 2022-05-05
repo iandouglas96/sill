@@ -10,12 +10,12 @@ from integrated_cloud import IntegratedCloud, COLOR_LUT, CLASS_LUT
 from time import perf_counter, time
 
 class SillCanvas(scene.SceneCanvas):
-    def __init__(self, bagpath, start_ind = 0):
+    def __init__(self, bagpath, start_ind = 0, load = False):
         scene.SceneCanvas.__init__(self, keys='interactive')
         self.unfreeze()
 
         self.view_ = self.central_widget.add_view(bgcolor='white')
-        self.cloud_ = IntegratedCloud(bagpath, start_ind)
+        self.cloud_ = IntegratedCloud(bagpath, start_ind, load)
         self.cloud_render_ = {}
         self.last_mouse_point_ = np.zeros(2)
         self.current_class_ = 1
@@ -141,7 +141,8 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('bag')
     parser.add_argument('--start', type=int, default=0)
+    parser.add_argument('--load', action='store_true')
     args = parser.parse_args()
 
-    sc = SillCanvas(args.bag, args.start)
+    sc = SillCanvas(args.bag, args.start, args.load)
     app.run()
