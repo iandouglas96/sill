@@ -33,7 +33,8 @@ class IntegratedCloud:
     def load_luts(self):
         rospack = rospkg.RosPack()
         package_path = Path(rospack.get_path('sill'))
-        config = yaml.load(open(package_path / Path('config') / Path('classes.yaml'), 'r'))
+        config = yaml.load(open(package_path / Path('config') / Path('classes.yaml'), 'r'),
+                           Loader=yaml.SafeLoader)
         class_lut = []
         color_lut = []
 
