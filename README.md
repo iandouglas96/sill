@@ -33,7 +33,7 @@ To change z, Use `PgUp`/`PgDown` and press `R` to redraw at the selected height.
 When `W` is pressed, labels will be written to disk in a folder in the same place as the bag file.
 
 ## Hotkey reference
-- `M`: When held, pan when clicking and dragging
+- `Space`: When held, pan when clicking and dragging
 - `Scroll Wheel`: Zoom
 - `N`: Load 10 more sweeps
 - `PgUp`/`PgDown`: Adjust the current elevation by 0.5m increments.  Note that the scene will not be redrawn

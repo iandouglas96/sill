@@ -87,7 +87,7 @@ class SillCanvas(scene.SceneCanvas):
             self.index_ += 10
             self.redraw()
             self.update_text()
-        elif event.key == 'M' and self.mode_ == 'label':
+        elif event.key == 'Space' and self.mode_ == 'label':
             self.mode_ = 'view2' 
             self.view_.camera._viewbox.events.mouse_move.connect(
                 self.view_.camera.viewbox_mouse_event)
@@ -120,7 +120,7 @@ class SillCanvas(scene.SceneCanvas):
             self.set_class(int(event.text))
 
     def on_key_release(self, event):
-        if event.key == 'M' and self.mode_ == 'view2':
+        if event.key == 'Space' and self.mode_ == 'view2':
             self.mode_ = 'label'
             self.view_.camera._viewbox.events.mouse_move.disconnect(
                 self.view_.camera.viewbox_mouse_event)
