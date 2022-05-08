@@ -69,11 +69,16 @@ class IntegratedCloud:
 
         for ind, img in enumerate(self.imgs_):
             img_labels = self.labels_[self.inds_[:, 0] == ind, 0].reshape(img.shape[:2])
+            # extract depth and intensity channels, which are each 16 bits, splitting
+            # the last 32 bit float
+            depth_intensity = np.frombuffer(img[:, :, 3].tobytes(), dtype=np.uint16).reshape(
+                                *img.shape[:2], -1)
             # destagger
             img_undist = img.copy()
+            img_undist[:, :, 3] = depth_intensity[:, :, 1].astype(np.float32)
             label_undist = img_labels.copy()
             for row, shift in enumerate(self.info_[0].D):
-                img_undist[row, :, :] = np.roll(img[row, :, :], int(shift), axis=0)
+                img_undist[row, :, :] = np.roll(img_undist[row, :, :], int(shift), axis=0)
                 label_undist[row, :] = np.roll(img_labels[row, :], int(shift), axis=0)
 
             # use tiff since can handle a 4 channel floating point image
