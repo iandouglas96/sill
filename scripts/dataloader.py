@@ -5,14 +5,15 @@ from sensor_msgs.msg import PointCloud2
 from geometry_msgs.msg import PoseStamped
 
 def ros_pose_to_numpy(msg):
-    R = Rotation.from_quat([msg.rotation.x,
-                            msg.rotation.y,
-                            msg.rotation.z,
-                            msg.rotation.w])
-    T = np.array([msg.translation.x,
-                  msg.translation.y,
-                  msg.translation.z])
-    return {'R': R, 'T': T}
+    trans = np.eye(4)
+    trans[:3, :3] = Rotation.from_quat([msg.rotation.x,
+                                        msg.rotation.y,
+                                        msg.rotation.z,
+                                        msg.rotation.w]).as_dcm()
+    trans[:3, 3] = np.array([msg.translation.x,
+                             msg.translation.y,
+                             msg.translation.z])
+    return trans
 
 class DataLoader:
     def __init__(self, bagpath):
@@ -61,9 +62,6 @@ class DataLoader:
                     # we have all elements
                     sweeps.append(sweep_data)
                     sweep_data = [None, None, None]
-
-    def spin(self):
-        rospy.spin()
 
 if __name__ == '__main__':
     # test

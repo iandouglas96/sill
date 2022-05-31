@@ -17,7 +17,9 @@ def get_cv_lut(color_lut):
 class IntegratedCloud:
     def __init__(self, bagpath, start_ind, load, directory = None):
         self.loader_ = DataLoader(bagpath).__iter__()
-        self.block_size_ = 10
+        self.render_block_size_ = 10
+        self.label_grid_res_xy_ = 10
+        self.label_grid_res_z_ = 2
         self.start_ind_ = start_ind
         self.load_ = load
         if directory is not None:
@@ -45,16 +47,26 @@ class IntegratedCloud:
         return class_lut, color_lut
 
     def go_to_start(self):
-        for _ in range(self.start_ind_):
-            self.loader_.__next__()
+        for ind in range(self.start_ind_):
+            try:
+                self.loader_.__next__()
+            except StopIteration:
+                print(f"STARTED PAST END, LAST INDEX IS {ind-1}")
+                return
 
     def reset(self):
         self.cloud_ = np.empty([0, 4], dtype=np.float32)
         # label, elevation when labelled
-        self.labels_ = np.empty([0, 2], dtype=np.float32)
-        self.inds_ = np.empty([0, 1], dtype=np.int32)
-        self.imgs_ = []
-        self.info_ = []
+        self.labels_ = np.zeros([100*self.label_grid_res_xy_,
+                                 100*self.label_grid_res_xy_,
+                                 30*self.label_grid_res_z_, 
+                                 2], dtype=np.float32)
+        # initilize elevation to high z value so easily overwritten
+        self.labels_[:, :, :, 1] = 1000
+        # keep track of grid indices for the current pc
+        self.grid_indices_ = np.empty([0, 1], dtype=np.int32)
+        self.panos_ = []
+        self.sweeps_ = []
         self.render_block_indices_ = np.empty([0, 1], dtype=np.int32)
         self.colors_ = None
         self.target_z_ = 0
@@ -96,44 +108,46 @@ class IntegratedCloud:
 
     def add_new(self):
         try:
-            pc, pose, img, info = self.loader_.__next__()
+            pano, sweeps = self.loader_.__next__()
         except StopIteration:
             print("REACHED END OF BAG")
             return
 
+        pose = np.eye(4)
+        pose[:3, :] = np.array(pano[1].P).reshape((3, 4))
         if self.root_transform_ is None:
             self.root_transform_ = pose
 
-        scan_ind = len(self.imgs_)
-        self.imgs_.append(img)
-        self.info_.append(info)
+        scan_ind = len(self.panos_)
+        self.panos_.append(pano)
+        self.sweeps_ += sweeps
+
+        # project pano into cloud
+        pc = self.project_pano(pano)
 
         # transform cloud
-        pc_trans = pc.copy()
-        comb_pose = {'R': self.root_transform_['R'].inv() * pose['R'], 
-                     'T': self.root_transform_['R'].inv().apply(pose['T'] - self.root_transform_['T'])}
-        pc_trans[:, :3] = comb_pose['R'].apply(pc[:, :3]) + comb_pose['T']
-        self.cloud_ = np.vstack((self.cloud_, pc_trans))
-        self.inds_ = np.vstack((self.inds_, np.ones([pc.shape[0], 1])*scan_ind))
-        # initialize to high z because can overwrite with low z
-        self.labels_ = np.vstack((self.labels_, np.repeat(np.array([[0, 1000]]), pc.shape[0], axis=0)))
+        comb_pose = np.linalg.solve(self.root_transform_, pose)
+        pc[:, :3] = (comb_pose[:3, :3] @ pc[:, :3].T).T + comb_pose[:3, 3]
+
+        self.cloud_ = np.vstack((self.cloud_, pc))
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
 
-        if self.load_:
-            label_dir = self.directory_ / 'labels'
-            label_img = cv2.imread((label_dir / f'{info.header.stamp.to_nsec()}.png').as_posix())
-            if label_img is not None:
-                label_undist = label_img.copy()
-                # shift back
-                for row, shift in enumerate(info.D):
-                    label_undist[row, :] = np.roll(label_img[row, :], -int(shift), axis=0)
-                flattened_labels = label_undist[:,:,0].flatten()
-                self.labels_[self.inds_[:, 0] == scan_ind, 0] = flattened_labels
-                for label in np.unique(label_img):
-                    new_colors[flattened_labels == label] = self.color_lut_[label]
+        # TODO: UPDATE FOR NEW VOXEL-BASED SYSTEM
+        #if self.load_:
+        #    label_dir = self.directory_ / 'labels'
+        #    label_img = cv2.imread((label_dir / f'{info.header.stamp.to_nsec()}.png').as_posix())
+        #    if label_img is not None:
+        #        label_undist = label_img.copy()
+        #        # shift back
+        #        for row, shift in enumerate(info.D):
+        #            label_undist[row, :] = np.roll(label_img[row, :], -int(shift), axis=0)
+        #        flattened_labels = label_undist[:,:,0].flatten()
+        #        self.labels_[self.inds_[:, 0] == scan_ind, 0] = flattened_labels
+        #        for label in np.unique(label_img):
+        #            new_colors[flattened_labels == label] = self.color_lut_[label]
 
         self.render_block_indices_ = np.vstack((self.render_block_indices_, 
-            self.get_block_ind(pc_trans[:, :2])[:, None]))
+            self.get_block_ind(pc[:, :2])[:, None]))
 
         if self.colors_ is None:
             self.colors_ = new_colors
@@ -142,16 +156,32 @@ class IntegratedCloud:
 
         self.adjust_z(0)
 
+    def project_pano(self, pano):
+        vfov = np.pi/2
+        azis = np.arange(2*np.pi, 0, -np.pi * 2 / pano[0].shape[1])
+        elevs = np.arange(vfov/2, -vfov/2-0.0001, -vfov / (pano[0].shape[0] - 1))
+
+        pc_full = np.empty((*pano[0].shape[:2], 4))
+        # x,y,z
+        pc_full[:,:,0] = pano[0][:,:,0]/pano[1].R[0] * np.cos(elevs[:, None]) * np.cos(azis)
+        pc_full[:,:,1] = pano[0][:,:,0]/pano[1].R[0] * np.cos(elevs[:, None]) * np.sin(azis)
+        pc_full[:,:,2] = pano[0][:,:,0]/pano[1].R[0] * np.sin(elevs[:, None])
+        # intensity
+        pc_full[:,:,3] = pano[0][:,:,1]
+
+        pc_full = pc_full.reshape(-1, pc_full.shape[-1])
+        return pc_full[~np.isnan(pc_full[:,0]), :]
+
     def get_block_ind(self, pts):
-        inds = (pts / self.block_size_).astype(np.int32)
+        inds = (pts / self.render_block_size_).astype(np.int32)
         return inds[:,0] + (inds[:,1] << 16)
 
     def get_block_neighborhood(self, pt):
         pts = np.stack((pt,
-                        pt + np.array([0, self.block_size_]),
-                        pt + np.array([self.block_size_, 0]),
-                        pt + np.array([0, -self.block_size_]),
-                        pt + np.array([-self.block_size_, 0])))
+                        pt + np.array([0, self.render_block_size_]),
+                        pt + np.array([self.render_block_size_, 0]),
+                        pt + np.array([0, -self.render_block_size_]),
+                        pt + np.array([-self.render_block_size_, 0])))
         return self.get_block_ind(pts)
 
     def get_indices(self):
