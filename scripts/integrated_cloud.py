@@ -7,6 +7,7 @@ import cv2
 from pathlib import Path
 import rospkg
 import yaml
+import tqdm
 
 def get_cv_lut(color_lut):
     lut = np.zeros((256, 1, 3), dtype=np.uint8)
@@ -78,37 +79,68 @@ class IntegratedCloud:
         self.go_to_start()
 
     def write(self):
+        print(f"Writing panos...")
+        for pano in tqdm.tqdm(self.panos_):
+            pose = np.eye(4)
+            pose[:3, :] = np.array(pano[1].P).reshape((3, 4))
+
+            # project and transform
+            pc_orig = self.project_pano(pano, True)
+            comb_pose = np.linalg.solve(self.root_transform_, pose)
+            pc = pc_orig.copy()
+            pc[:, :3] = (comb_pose[:3, :3] @ pc_orig[:, :3].T).T + comb_pose[:3, 3]
+
+            indices = self.compute_grid_indices(pc)
+            pano_labels = self.labels_.reshape(-1, 2)[indices, 0]
+            pano_labels = pano_labels.reshape(pano[0].shape[:2])
+
+            # actually save
+            stamp = pano[1].header.stamp.to_nsec()
+            pano_img = pc_orig.reshape(*pano[0].shape[:2], 4).astype(np.float32)
+            self.save_scan(stamp, pano_img, pano_labels, "pano")
+
+        print(f"Writing sweeps...")
+        for sweep in tqdm.tqdm(self.sweeps_):
+            indices = self.compute_grid_indices(sweep[0])
+            sweep_labels = self.labels_.reshape(-1, 2)[indices, 0]
+            sweep_labels = sweep_labels.reshape(sweep[1].shape[:2])
+            
+            # extract depth and intensity channels, which are each 16 bits, splitting
+            # the last 32 bit float
+            depth_intensity = np.frombuffer(sweep[1][:, :, 3].tobytes(), dtype=np.uint16).reshape(
+                                *(sweep[1].shape[:2]), -1)
+
+            # destagger
+            img_undist = sweep[1].copy()
+            img_undist[:, :, 3] = depth_intensity[:, :, 1].astype(np.float32)
+            label_undist = sweep_labels.copy()
+            for row, shift in enumerate(sweep[2].D):
+                img_undist[row, :, :] = np.roll(img_undist[row, :, :], int(shift), axis=0)
+                label_undist[row, :] = np.roll(label_undist[row, :], int(shift), axis=0)
+             
+            # use tiff since can handle a 4 channel floating point image
+            stamp = sweep[2].header.stamp.to_nsec()
+            self.save_scan(stamp, img_undist, label_undist, "sweep")
+        print(f"Labels written to disk at {self.directory_.as_posix()}")
+
+    def save_scan(self, stamp, scan, labels, prefix=''):
         label_dir = self.directory_ / 'labels'
         label_dir.mkdir(exist_ok = True)
         scan_dir = self.directory_ / 'scans'
         scan_dir.mkdir(exist_ok = True)
 
-        for ind, img in enumerate(self.imgs_):
-            img_labels = self.labels_[self.inds_[:, 0] == ind, 0].reshape(img.shape[:2])
-            # extract depth and intensity channels, which are each 16 bits, splitting
-            # the last 32 bit float
-            depth_intensity = np.frombuffer(img[:, :, 3].tobytes(), dtype=np.uint16).reshape(
-                                *img.shape[:2], -1)
-            # destagger
-            img_undist = img.copy()
-            img_undist[:, :, 3] = depth_intensity[:, :, 1].astype(np.float32)
-            label_undist = img_labels.copy()
-            for row, shift in enumerate(self.info_[0].D):
-                img_undist[row, :, :] = np.roll(img_undist[row, :, :], int(shift), axis=0)
-                label_undist[row, :] = np.roll(img_labels[row, :], int(shift), axis=0)
+        if len(prefix) > 0:
+            prefix = f"{prefix}_"
 
-            # use tiff since can handle a 4 channel floating point image
-            stamp = self.info_[ind].header.stamp.to_nsec()
-            cv2.imwrite((scan_dir / f'{stamp}.tiff').as_posix(), img_undist)
+        cv2.imwrite((scan_dir / f"{prefix}{stamp}.tiff").as_posix(), scan)
 
-            cv2.imwrite((label_dir / f'{stamp}.png').as_posix(), label_undist)
-            range_img = np.linalg.norm(img_undist[:, :, :3]*10, axis=2).astype(np.uint8)
-            range_img_color = cv2.cvtColor(range_img, cv2.COLOR_GRAY2BGR)
-            label_undist_color = cv2.cvtColor(label_undist.astype(np.uint8), cv2.COLOR_GRAY2BGR)
-            label_viz = cv2.LUT(label_undist_color, self.cv_lut_)
-            cv2.imwrite((label_dir / f'viz_{stamp}.png').as_posix(), 
-                    cv2.addWeighted(range_img_color, 0.5, label_viz, 0.5, 0))
-        print(f"Labels written to disk at {self.directory_.as_posix()}")
+        cv2.imwrite((label_dir / f"{prefix}{stamp}.png").as_posix(), labels)
+        range_img = np.linalg.norm(scan[:, :, :3]*10, axis=2).astype(np.uint8)
+        range_img_color = cv2.cvtColor(range_img, cv2.COLOR_GRAY2BGR)
+        label_undist_color = cv2.cvtColor(labels.astype(np.uint8), cv2.COLOR_GRAY2BGR)
+        label_viz = cv2.LUT(label_undist_color, self.cv_lut_)
+        cv2.imwrite((label_dir / f"viz_{prefix}{stamp}.png").as_posix(), 
+                cv2.addWeighted(range_img_color, 0.5, label_viz, 0.5, 0))
 
     def add_new(self):
         try:
@@ -174,8 +206,7 @@ class IntegratedCloud:
         self.grid_indices_ = self.compute_grid_indices(self.cloud_)
         self.render_block_indices_ = self.get_render_block_ind(self.cloud_[:, :2])[:, None]
 
-    def project_pano(self, pano):
-        vfov = np.pi/2
+    def project_pano(self, pano, keep_shape=False, vfov=np.pi/2):
         azis = np.arange(2*np.pi, 0, -np.pi * 2 / pano[0].shape[1])
         elevs = np.arange(vfov/2, -vfov/2-0.0001, -vfov / (pano[0].shape[0] - 1))
 
@@ -188,6 +219,9 @@ class IntegratedCloud:
         pc_full[:,:,3] = pano[0][:,:,1]
 
         pc_full = pc_full.reshape(-1, pc_full.shape[-1])
+
+        if keep_shape:
+            return pc_full
         return pc_full[np.isfinite(pc_full[:,0]), :]
 
     def compute_grid_indices(self, pc):

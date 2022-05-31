@@ -85,6 +85,7 @@ class SillCanvas(scene.SceneCanvas):
             for _ in range(10):
                 self.cloud_.add_new()    
             self.index_ += 10
+            self.cloud_.voxel_filter()
             self.redraw()
             self.update_text()
         elif event.key == 'Space' and self.mode_ == 'label':
@@ -100,9 +101,6 @@ class SillCanvas(scene.SceneCanvas):
                 self.cloud_render_[key].parent = None
             self.redraw()
             self.cloud_render_ = {}
-        elif event.key == 'F':
-            self.cloud_.voxel_filter()
-            self.redraw()
         elif event.key == 'PageUp':
             self.cloud_.adjust_z(1, update=False)
             self.updated_z_ = False
