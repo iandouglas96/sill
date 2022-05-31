@@ -1,4 +1,5 @@
 import numpy as np
+import open3d as o3d
 from dataloader import DataLoader
 from vispy.color import Color, ColorArray
 from scipy.spatial.transform import Rotation
@@ -55,8 +56,9 @@ class IntegratedCloud:
                 return
 
     def reset(self):
-        self.cloud_ = np.empty([0, 4], dtype=np.float32)
+        self.cloud_ = np.empty([0, 3], dtype=np.float32)
         # label, elevation when labelled
+        # add 1 so 0 gets included
         self.labels_ = np.zeros([100*self.label_grid_res_xy_,
                                  100*self.label_grid_res_xy_,
                                  30*self.label_grid_res_z_, 
@@ -65,6 +67,7 @@ class IntegratedCloud:
         self.labels_[:, :, :, 1] = 1000
         # keep track of grid indices for the current pc
         self.grid_indices_ = np.empty([0, 1], dtype=np.int32)
+        self.grid_centers_ = self.get_grid_centers()
         self.panos_ = []
         self.sweeps_ = []
         self.render_block_indices_ = np.empty([0, 1], dtype=np.int32)
@@ -129,7 +132,8 @@ class IntegratedCloud:
         comb_pose = np.linalg.solve(self.root_transform_, pose)
         pc[:, :3] = (comb_pose[:3, :3] @ pc[:, :3].T).T + comb_pose[:3, 3]
 
-        self.cloud_ = np.vstack((self.cloud_, pc))
+        self.cloud_ = np.vstack((self.cloud_, pc[:, :3]))
+        self.grid_indices_ = self.compute_grid_indices(self.cloud_)
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
 
         # TODO: UPDATE FOR NEW VOXEL-BASED SYSTEM
@@ -147,7 +151,7 @@ class IntegratedCloud:
         #            new_colors[flattened_labels == label] = self.color_lut_[label]
 
         self.render_block_indices_ = np.vstack((self.render_block_indices_, 
-            self.get_block_ind(pc[:, :2])[:, None]))
+            self.get_render_block_ind(pc[:, :2])[:, None]))
 
         if self.colors_ is None:
             self.colors_ = new_colors
@@ -155,6 +159,19 @@ class IntegratedCloud:
             self.colors_.extend(new_colors)
 
         self.adjust_z(0)
+
+    def voxel_filter(self, voxel_size=0.05):
+        pc_o3d = o3d.geometry.PointCloud()
+        pc_o3d.points = o3d.utility.Vector3dVector(self.cloud_[:, :3])
+        pc_o3d.colors = o3d.utility.Vector3dVector(self.colors_.RGB)
+        down_pc_o3d = pc_o3d.voxel_down_sample(voxel_size=voxel_size)
+
+        self.cloud_ = np.asarray(down_pc_o3d.points)
+        self.colors_ = ColorArray(np.asarray(down_pc_o3d.colors)/255, alpha=1)
+
+        # recomupte what needs to be recomputed
+        self.grid_indices_ = self.compute_grid_indices(self.cloud_)
+        self.render_block_indices_ = self.get_render_block_ind(self.cloud_[:, :2])[:, None]
 
     def project_pano(self, pano):
         vfov = np.pi/2
@@ -170,21 +187,43 @@ class IntegratedCloud:
         pc_full[:,:,3] = pano[0][:,:,1]
 
         pc_full = pc_full.reshape(-1, pc_full.shape[-1])
-        return pc_full[~np.isnan(pc_full[:,0]), :]
+        return pc_full[np.isfinite(pc_full[:,0]), :]
 
-    def get_block_ind(self, pts):
+    def compute_grid_indices(self, pc):
+        pc_ind = -np.ones((pc.shape[0], 3), dtype=np.int32)
+        pc_ind[:,:2] = pc[:,:2] * self.label_grid_res_xy_ + self.labels_.shape[0]/2
+        pc_ind[:,2] = pc[:,2] * self.label_grid_res_z_
+
+        flattened_ind = np.ravel_multi_index((pc_ind[:,0], pc_ind[:,1], pc_ind[:,2]), 
+                self.labels_.shape[:3], mode='clip')
+
+        # check bounds
+        # let z below 0 just get clipped
+        flattened_ind[np.any(pc_ind[:,:2] < 0, axis=1)] = -1 
+        flattened_ind[np.any(pc_ind[:,:2] >= self.labels_.shape[0], axis=1)] = -1
+        flattened_ind[pc_ind[:,2] >= self.labels_.shape[2]] = -1
+
+        return flattened_ind
+
+    def get_grid_centers(self):
+        axis = np.arange(self.labels_.shape[0])
+        axis = axis / self.label_grid_res_xy_
+        axis -= np.mean(axis)
+        return np.stack(np.meshgrid(axis, axis, indexing='ij'))
+
+    def get_render_block_ind(self, pts):
         inds = (pts / self.render_block_size_).astype(np.int32)
         return inds[:,0] + (inds[:,1] << 16)
 
-    def get_block_neighborhood(self, pt):
+    def get_render_block_neighborhood(self, pt):
         pts = np.stack((pt,
                         pt + np.array([0, self.render_block_size_]),
                         pt + np.array([self.render_block_size_, 0]),
                         pt + np.array([0, -self.render_block_size_]),
                         pt + np.array([-self.render_block_size_, 0])))
-        return self.get_block_ind(pts)
+        return self.get_render_block_ind(pts)
 
-    def get_indices(self):
+    def get_render_indices(self):
         return np.unique(self.render_block_indices_)
 
     def adjust_z(self, delta, update=True):
@@ -193,22 +232,37 @@ class IntegratedCloud:
             return
 
         visible = self.cloud_[:, 2] <= self.target_z_
-        labelled_below = np.logical_and(self.labels_[:, 1] < self.target_z_, self.labels_[:, 0] > 0)
+        cells_labelled_below = np.logical_and(self.labels_[:, :, :, 1] < self.target_z_, 
+                                              self.labels_[:, :, :, 0] > 0)
         if np.any(visible):
             self.colors_[visible] = ColorArray(self.colors_[visible], alpha=1)
-        if np.any(labelled_below):
-            self.colors_[labelled_below] = ColorArray(self.colors_[labelled_below], alpha=0.1)
+        if np.any(cells_labelled_below):
+            pt_indices = np.isin(self.grid_indices_, np.where(cells_labelled_below.flatten()))
+            self.colors_[pt_indices] = ColorArray(self.colors_[pt_indices], alpha=0.1)
         if not np.all(visible):
             self.colors_[np.invert(visible)] = ColorArray(self.colors_[np.invert(visible)], alpha=0)
 
     def label(self, pos, label, eps=1):
-        to_update = np.logical_and(
-                np.logical_and(self.target_z_ <= self.labels_[:, 1], 
-                               self.cloud_[:, 2] <= self.target_z_),
-                np.linalg.norm(self.cloud_[:, :2] - pos, axis=1) < eps)
-        if np.any(to_update):
-            self.labels_[to_update] = np.array([label, self.target_z_])
-            self.colors_[to_update] = self.color_lut_[label]
+        xy_to_update = np.where(np.linalg.norm(self.grid_centers_ - pos[:,None,None], axis=0) < eps)
+        if xy_to_update[0].shape[0] < 1:
+            # zoomed in, just pick closest cell
+            xy_to_update = np.unravel_index(np.argmin(np.linalg.norm(self.grid_centers_ - pos[:,None,None], axis=0)), 
+                    self.grid_centers_.shape[1:])
+            xy_to_update = np.array(xy_to_update)[:, None]
+
+        z_to_update = np.arange(self.target_z_ * self.label_grid_res_z_ + 0.0001).astype(np.int32)
+        # get all combinations
+        xyz_to_update = np.tile(xy_to_update, (1, z_to_update.shape[0]))
+        xyz_to_update = np.vstack((xyz_to_update, np.repeat(z_to_update, xy_to_update[0].shape[0])))
+
+        update_ind = np.ravel_multi_index((xyz_to_update[0,:], xyz_to_update[1,:], xyz_to_update[2,:]),
+                self.labels_.shape[:3])
+
+        # filter points that have not yet been set
+        update_ind = update_ind[self.target_z_ <= self.labels_.reshape(-1, 2)[update_ind, 1]]
+
+        self.labels_.reshape(-1, 2)[update_ind, :] = np.array([label, self.target_z_])
+        self.colors_[np.isin(self.grid_indices_, update_ind)] = self.color_lut_[label]
 
     def cloud(self, block):
         return self.cloud_[self.render_block_indices_[:,0] == block, :3]
