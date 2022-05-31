@@ -21,6 +21,7 @@ class IntegratedCloud:
         self.render_block_size_ = 10
         self.label_grid_res_xy_ = 10
         self.label_grid_res_z_ = 2
+        self.label_grid_z_origin_ = -2
         self.start_ind_ = start_ind
         self.load_ = load
         if directory is not None:
@@ -192,7 +193,7 @@ class IntegratedCloud:
     def compute_grid_indices(self, pc):
         pc_ind = -np.ones((pc.shape[0], 3), dtype=np.int32)
         pc_ind[:,:2] = pc[:,:2] * self.label_grid_res_xy_ + self.labels_.shape[0]/2
-        pc_ind[:,2] = pc[:,2] * self.label_grid_res_z_
+        pc_ind[:,2] = (pc[:,2] - self.label_grid_z_origin_) * self.label_grid_res_z_
 
         flattened_ind = np.ravel_multi_index((pc_ind[:,0], pc_ind[:,1], pc_ind[:,2]), 
                 self.labels_.shape[:3], mode='clip')
@@ -227,7 +228,7 @@ class IntegratedCloud:
         return np.unique(self.render_block_indices_)
 
     def adjust_z(self, delta, update=True):
-        self.target_z_ += delta
+        self.target_z_ += delta / self.label_grid_res_z_
         if not update:
             return
 
@@ -250,7 +251,7 @@ class IntegratedCloud:
                     self.grid_centers_.shape[1:])
             xy_to_update = np.array(xy_to_update)[:, None]
 
-        z_to_update = np.arange(self.target_z_ * self.label_grid_res_z_ + 0.0001).astype(np.int32)
+        z_to_update = np.arange((self.target_z_ - self.label_grid_z_origin_) * self.label_grid_res_z_ - 0.001).astype(np.int32)
         # get all combinations
         xyz_to_update = np.tile(xy_to_update, (1, z_to_update.shape[0]))
         xyz_to_update = np.vstack((xyz_to_update, np.repeat(z_to_update, xy_to_update[0].shape[0])))

@@ -104,11 +104,11 @@ class SillCanvas(scene.SceneCanvas):
             self.cloud_.voxel_filter()
             self.redraw()
         elif event.key == 'PageUp':
-            self.cloud_.adjust_z(0.5, update=False)
+            self.cloud_.adjust_z(1, update=False)
             self.updated_z_ = False
             self.update_text()
         elif event.key == 'PageDown':
-            self.cloud_.adjust_z(-0.5, update=False)
+            self.cloud_.adjust_z(-1, update=False)
             self.updated_z_ = False
             self.update_text()
         elif event.key == 'O':
