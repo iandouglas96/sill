@@ -134,7 +134,17 @@ class IntegratedCloud:
 
         cv2.imwrite((scan_dir / f"{prefix}{stamp}.tiff").as_posix(), scan)
 
-        cv2.imwrite((label_dir / f"{prefix}{stamp}.png").as_posix(), labels)
+        label_path = (label_dir / f"{prefix}{stamp}.png").as_posix()
+        if self.load_:
+            old_label_img = cv2.imread(label_path)
+            if old_label_img is not None:
+                # don't write unknown to file
+                # if we load an old file we haven't set the grid cells properly, so don't want
+                # to wipe everything
+                labels.ravel()[labels.ravel() == 0] = \
+                    old_label_img[:, :, 0].ravel()[labels.ravel() == 0]
+
+        cv2.imwrite(label_path, labels)
         range_img = np.linalg.norm(scan[:, :, :3]*10, axis=2).astype(np.uint8)
         range_img_color = cv2.cvtColor(range_img, cv2.COLOR_GRAY2BGR)
         label_undist_color = cv2.cvtColor(labels.astype(np.uint8), cv2.COLOR_GRAY2BGR)
@@ -169,19 +179,14 @@ class IntegratedCloud:
         self.grid_indices_ = self.compute_grid_indices(self.cloud_)
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
 
-        # TODO: UPDATE FOR NEW VOXEL-BASED SYSTEM
-        #if self.load_:
-        #    label_dir = self.directory_ / 'labels'
-        #    label_img = cv2.imread((label_dir / f'{info.header.stamp.to_nsec()}.png').as_posix())
-        #    if label_img is not None:
-        #        label_undist = label_img.copy()
-        #        # shift back
-        #        for row, shift in enumerate(info.D):
-        #            label_undist[row, :] = np.roll(label_img[row, :], -int(shift), axis=0)
-        #        flattened_labels = label_undist[:,:,0].flatten()
-        #        self.labels_[self.inds_[:, 0] == scan_ind, 0] = flattened_labels
-        #        for label in np.unique(label_img):
-        #            new_colors[flattened_labels == label] = self.color_lut_[label]
+        if self.load_:
+            label_dir = self.directory_ / 'labels'
+            label_img = cv2.imread((label_dir / f'pano_{pano[1].header.stamp.to_nsec()}.png').as_posix())
+            if label_img is not None:
+                flattened_labels = label_img[:,:,0].ravel()
+                for label in np.unique(label_img):
+                    if label != 0:
+                        new_colors[flattened_labels == label] = self.color_lut_[label]
 
         self.render_block_indices_ = np.vstack((self.render_block_indices_, 
             self.get_render_block_ind(pc[:, :2])[:, None]))
@@ -272,7 +277,7 @@ class IntegratedCloud:
         if np.any(visible):
             self.colors_[visible] = ColorArray(self.colors_[visible], alpha=1)
         if np.any(cells_labelled_below):
-            pt_indices = np.isin(self.grid_indices_, np.where(cells_labelled_below.flatten()))
+            pt_indices = np.isin(self.grid_indices_, np.where(cells_labelled_below.ravel()))
             self.colors_[pt_indices] = ColorArray(self.colors_[pt_indices], alpha=0.1)
         if not np.all(visible):
             self.colors_[np.invert(visible)] = ColorArray(self.colors_[np.invert(visible)], alpha=0)
