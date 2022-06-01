@@ -1,5 +1,4 @@
 import numpy as np
-import open3d as o3d
 from dataloader import DataLoader
 from vispy.color import Color, ColorArray
 from scipy.spatial.transform import Rotation
@@ -17,12 +16,33 @@ def get_cv_lut(color_lut):
     return lut
 
 class IntegratedCloud:
-    def __init__(self, bagpath, start_ind, load, directory = None):
+    def __init__(self, bagpath, start_ind, load, directory = None, config_path = None):
         self.loader_ = DataLoader(bagpath).__iter__()
-        self.render_block_size_ = 10
-        self.label_grid_res_xy_ = 10
-        self.label_grid_res_z_ = 2
-        self.label_grid_z_origin_ = -2
+
+        if config_path is None:
+            rospack = rospkg.RosPack()
+            package_path = Path(rospack.get_path('sill'))
+            config_path = package_path / Path('config') / Path('config.yaml')
+        else:
+            config_path = Path(config_path)
+        config = yaml.load(open(config_path, 'r'), Loader=yaml.SafeLoader)
+
+        self.render_block_size_ = config['render_block_size']
+        self.label_grid_res_xy_ = config['label_grid']['res_xy']
+        self.label_grid_res_z_ = config['label_grid']['res_z']
+        self.label_grid_origin_z_ = config['label_grid']['origin_z']
+        self.label_grid_size_xy_ = config['label_grid']['size_xy']
+        self.label_grid_size_z_ = config['label_grid']['size_z']
+        self.voxel_filter_size_ = 1./config['voxel_filter_res']
+
+        # label, elevation when labelled
+        # only need to allocate mem once
+        self.labels_ = np.zeros([self.label_grid_size_xy_*self.label_grid_res_xy_,
+                                 self.label_grid_size_xy_*self.label_grid_res_xy_,
+                                 self.label_grid_size_z_*self.label_grid_res_z_, 
+                                 2], dtype=np.float32)
+        self.grid_centers_ = self.get_grid_centers()
+
         self.start_ind_ = start_ind
         self.load_ = load
         if directory is not None:
@@ -59,17 +79,11 @@ class IntegratedCloud:
 
     def reset(self):
         self.cloud_ = np.empty([0, 3], dtype=np.float32)
-        # label, elevation when labelled
-        # add 1 so 0 gets included
-        self.labels_ = np.zeros([100*self.label_grid_res_xy_,
-                                 100*self.label_grid_res_xy_,
-                                 30*self.label_grid_res_z_, 
-                                 2], dtype=np.float32)
         # initilize elevation to high z value so easily overwritten
+        self.labels_[:, :, :, 0] = 0
         self.labels_[:, :, :, 1] = 1000
         # keep track of grid indices for the current pc
         self.grid_indices_ = np.empty([0, 1], dtype=np.int32)
-        self.grid_centers_ = self.get_grid_centers()
         self.panos_ = []
         self.sweeps_ = []
         self.render_block_indices_ = np.empty([0, 1], dtype=np.int32)
@@ -94,7 +108,8 @@ class IntegratedCloud:
 
             indices = self.compute_grid_indices(pc)
             pano_labels = self.labels_.reshape(-1, 2)[indices, 0]
-            pano_labels[np.logical_or(~np.isfinite(pc_orig[:, 0]), pc_orig[:, 0] == 0)] = 0
+            pano_labels[np.logical_or(~np.isfinite(pc_orig[:, 0]), 
+                                      pc_orig[:, 0] == 0, indices < 0)] = 0
             pano_labels = pano_labels.reshape(pano[0].shape[:2])
 
             # actually save
@@ -106,6 +121,8 @@ class IntegratedCloud:
         for sweep in tqdm.tqdm(self.sweeps_):
             indices = self.compute_grid_indices(sweep[0])
             sweep_labels = self.labels_.reshape(-1, 2)[indices, 0]
+            sweep_labels[np.logical_or(~np.isfinite(sweep[0][:, 0]), 
+                                       sweep[0][:, 0] == 0, indices < 0)] = 0
             sweep_labels = sweep_labels.reshape(sweep[1].shape[:2])
             
             # extract depth and intensity channels, which are each 16 bits, splitting
@@ -208,7 +225,11 @@ class IntegratedCloud:
 
         self.adjust_z(0)
 
-    def voxel_filter(self, voxel_size=0.05):
+    def voxel_filter(self, voxel_size=None):
+        import open3d as o3d
+
+        if voxel_size is None:
+            voxel_size = self.voxel_filter_size_
         pc_o3d = o3d.geometry.PointCloud()
         pc_o3d.points = o3d.utility.Vector3dVector(self.cloud_[:, :3])
         pc_o3d.colors = o3d.utility.Vector3dVector(self.colors_.RGB)
@@ -238,14 +259,14 @@ class IntegratedCloud:
     def compute_grid_indices(self, pc):
         pc_ind = -np.ones((pc.shape[0], 3), dtype=np.int32)
         pc_ind[:,:2] = pc[:,:2] * self.label_grid_res_xy_ + self.labels_.shape[0]/2
-        pc_ind[:,2] = (pc[:,2] - self.label_grid_z_origin_) * self.label_grid_res_z_
+        pc_ind[:,2] = (pc[:,2] - self.label_grid_origin_z_) * self.label_grid_res_z_
 
         flattened_ind = np.ravel_multi_index((pc_ind[:,0], pc_ind[:,1], pc_ind[:,2]), 
                 self.labels_.shape[:3], mode='clip')
 
         # check bounds
         # let z below 0 just get clipped
-        flattened_ind[np.any(pc_ind[:,:2] < 0, axis=1)] = -1 
+        flattened_ind[np.any(pc_ind[:,:2] < 0, axis=1)] = -1
         flattened_ind[np.any(pc_ind[:,:2] >= self.labels_.shape[0], axis=1)] = -1
         flattened_ind[pc_ind[:,2] >= self.labels_.shape[2]] = -1
 
@@ -296,7 +317,7 @@ class IntegratedCloud:
                     self.grid_centers_.shape[1:])
             xy_to_update = np.array(xy_to_update)[:, None]
 
-        z_to_update = np.arange((self.target_z_ - self.label_grid_z_origin_) * self.label_grid_res_z_ - 0.001).astype(np.int32)
+        z_to_update = np.arange((self.target_z_ - self.label_grid_origin_z_) * self.label_grid_res_z_ - 0.001).astype(np.int32)
         # get all combinations
         xyz_to_update = np.tile(xy_to_update, (1, z_to_update.shape[0]))
         xyz_to_update = np.vstack((xyz_to_update, np.repeat(z_to_update, xy_to_update[0].shape[0])))
