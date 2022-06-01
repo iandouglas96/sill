@@ -34,6 +34,7 @@ class IntegratedCloud:
         self.label_grid_size_xy_ = config['label_grid']['size_xy']
         self.label_grid_size_z_ = config['label_grid']['size_z']
         self.voxel_filter_size_ = 1./config['voxel_filter_res']
+        self.pano_info_thresh_ = config['pano_info_thresh']
 
         # label, elevation when labelled
         # only need to allocate mem once
@@ -100,17 +101,17 @@ class IntegratedCloud:
 
             # project and transform
             pc_orig = self.project_pano(pano)
-            rot = np.eye(4)
-            rot[:3, :3] = Rotation.from_rotvec(np.array([0,0,np.pi])).as_dcm()
-            comb_pose = rot @ np.linalg.solve(self.root_transform_, pose)
             pc = pc_orig.copy()
-            pc[:, :3] = (comb_pose[:3, :3] @ pc_orig[:, :3].T).T + comb_pose[:3, 3]
+            #rot[:3, :3] = Rotation.from_rotvec(np.array([0,0,np.pi])).as_dcm()
+            pc[:, :3] = (pose[:3, :3] @ pc_orig[:, :3].T).T + pose[:3, 3] - self.root_transform_[:3, 3]
 
             indices = self.compute_grid_indices(pc)
             pano_labels = self.labels_.reshape(-1, 2)[indices, 0]
             pano_labels[np.logical_or(~np.isfinite(pc_orig[:, 0]), 
                                       pc_orig[:, 0] == 0, indices < 0)] = 0
             pano_labels = pano_labels.reshape(pano[0].shape[:2])
+            # don't label points with low confidence
+            pano_labels[pano[0][:,:,2] < self.pano_info_thresh_] = 0
 
             # actually save
             stamp = pano[1].header.stamp.to_nsec()
@@ -119,6 +120,7 @@ class IntegratedCloud:
 
         print(f"Writing sweeps...")
         for sweep in tqdm.tqdm(self.sweeps_):
+            sweep[0][:, :3] -= self.root_transform_[None, :3, 3]
             indices = self.compute_grid_indices(sweep[0])
             sweep_labels = self.labels_.reshape(-1, 2)[indices, 0]
             sweep_labels[np.logical_or(~np.isfinite(sweep[0][:, 0]), 
@@ -192,10 +194,7 @@ class IntegratedCloud:
         pc = self.project_pano(pano)
 
         # transform cloud
-        rot = np.eye(4)
-        rot[:3, :3] = Rotation.from_rotvec(np.array([0,0,np.pi])).as_dcm()
-        comb_pose = rot @ np.linalg.solve(self.root_transform_, pose)
-        pc[:, :3] = (comb_pose[:3, :3] @ pc[:, :3].T).T + comb_pose[:3, 3]
+        pc[:, :3] = (pose[:3, :3] @ pc[:, :3].T).T + pose[:3, 3] - self.root_transform_[:3, 3]
 
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
         if self.load_:
