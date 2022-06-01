@@ -86,7 +86,9 @@ class IntegratedCloud:
 
             # project and transform
             pc_orig = self.project_pano(pano)
-            comb_pose = np.linalg.solve(self.root_transform_, pose)
+            rot = np.eye(4)
+            rot[:3, :3] = Rotation.from_rotvec(np.array([0,0,np.pi])).as_dcm()
+            comb_pose = rot @ np.linalg.solve(self.root_transform_, pose)
             pc = pc_orig.copy()
             pc[:, :3] = (comb_pose[:3, :3] @ pc_orig[:, :3].T).T + comb_pose[:3, 3]
 
@@ -173,7 +175,9 @@ class IntegratedCloud:
         pc = self.project_pano(pano)
 
         # transform cloud
-        comb_pose = np.linalg.solve(self.root_transform_, pose)
+        rot = np.eye(4)
+        rot[:3, :3] = Rotation.from_rotvec(np.array([0,0,np.pi])).as_dcm()
+        comb_pose = rot @ np.linalg.solve(self.root_transform_, pose)
         pc[:, :3] = (comb_pose[:3, :3] @ pc[:, :3].T).T + comb_pose[:3, 3]
 
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
