@@ -85,13 +85,14 @@ class IntegratedCloud:
             pose[:3, :] = np.array(pano[1].P).reshape((3, 4))
 
             # project and transform
-            pc_orig = self.project_pano(pano, True)
+            pc_orig = self.project_pano(pano)
             comb_pose = np.linalg.solve(self.root_transform_, pose)
             pc = pc_orig.copy()
             pc[:, :3] = (comb_pose[:3, :3] @ pc_orig[:, :3].T).T + comb_pose[:3, 3]
 
             indices = self.compute_grid_indices(pc)
             pano_labels = self.labels_.reshape(-1, 2)[indices, 0]
+            pano_labels[np.logical_or(~np.isfinite(pc_orig[:, 0]), pc_orig[:, 0] == 0)] = 0
             pano_labels = pano_labels.reshape(pano[0].shape[:2])
 
             # actually save
@@ -175,10 +176,7 @@ class IntegratedCloud:
         comb_pose = np.linalg.solve(self.root_transform_, pose)
         pc[:, :3] = (comb_pose[:3, :3] @ pc[:, :3].T).T + comb_pose[:3, 3]
 
-        self.cloud_ = np.vstack((self.cloud_, pc[:, :3]))
-        self.grid_indices_ = self.compute_grid_indices(self.cloud_)
         new_colors = ColorArray(np.repeat(np.clip(pc[:, 3, None]/1000, 0, 1), 3, axis=1), alpha=1)
-
         if self.load_:
             label_dir = self.directory_ / 'labels'
             label_img = cv2.imread((label_dir / f'pano_{pano[1].header.stamp.to_nsec()}.png').as_posix())
@@ -187,6 +185,14 @@ class IntegratedCloud:
                 for label in np.unique(label_img):
                     if label != 0:
                         new_colors[flattened_labels == label] = self.color_lut_[label]
+
+        # remove extra points
+        valid_points = np.logical_and(np.isfinite(pc[:, 0]), pc[:, 0] != 0)
+        pc = pc[valid_points, :]
+        new_colors = new_colors[valid_points]
+
+        self.cloud_ = np.vstack((self.cloud_, pc[:, :3]))
+        self.grid_indices_ = self.compute_grid_indices(self.cloud_)
 
         self.render_block_indices_ = np.vstack((self.render_block_indices_, 
             self.get_render_block_ind(pc[:, :2])[:, None]))
@@ -223,11 +229,7 @@ class IntegratedCloud:
         # intensity
         pc_full[:,:,3] = pano[0][:,:,1]
 
-        pc_full = pc_full.reshape(-1, pc_full.shape[-1])
-
-        if keep_shape:
-            return pc_full
-        return pc_full[np.isfinite(pc_full[:,0]), :]
+        return pc_full.reshape(-1, pc_full.shape[-1])
 
     def compute_grid_indices(self, pc):
         pc_ind = -np.ones((pc.shape[0], 3), dtype=np.int32)

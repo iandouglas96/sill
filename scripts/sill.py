@@ -140,8 +140,8 @@ class SillCanvas(scene.SceneCanvas):
                 self.redraw(pos)
                 redraw_t = perf_counter()
                 
-                print(f"label: {label_t - start_t}")
-                print(f"render: {redraw_t - label_t}")
+                #print(f"label: {label_t - start_t}")
+                #print(f"render: {redraw_t - label_t}")
 
                 self.last_mouse_point_ = pos
 
