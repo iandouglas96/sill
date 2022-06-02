@@ -54,6 +54,7 @@ class IntegratedCloud:
         self.class_lut_, self.color_lut_ = self.load_luts()
         self.cv_lut_ = get_cv_lut(self.color_lut_)
         self.reset()
+        self.go_to_start()
         self.add_new()
 
     def load_luts(self):
@@ -91,7 +92,6 @@ class IntegratedCloud:
         self.colors_ = None
         self.target_z_ = 0
         self.root_transform_ = None 
-        self.go_to_start()
 
     def write(self):
         print(f"Writing panos...")
