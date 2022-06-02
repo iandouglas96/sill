@@ -335,7 +335,8 @@ class IntegratedCloud:
         update_ind = update_ind[self.target_z_ <= self.labels_.reshape(-1, 2)[update_ind, 1]]
 
         self.labels_.reshape(-1, 2)[update_ind, :] = np.array([label, self.target_z_])
-        self.colors_[np.isin(self.grid_indices_, update_ind)] = self.color_lut_[label]
+        if self.colors_ is not None:
+            self.colors_[np.isin(self.grid_indices_, update_ind)] = self.color_lut_[label]
 
     def cloud(self, block):
         return self.cloud_[self.render_block_indices_[:,0] == block, :3]
