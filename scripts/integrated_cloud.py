@@ -122,11 +122,12 @@ class IntegratedCloud:
 
         print(f"Writing sweeps...")
         for sweep in tqdm.tqdm(self.sweeps_):
-            sweep[0][:, :3] -= self.root_transform_[None, :3, 3]
-            indices = self.compute_grid_indices(sweep[0])
+            trans_sweep = sweep[0].copy()
+            trans_sweep[:, :3] -= self.root_transform_[None, :3, 3]
+            indices = self.compute_grid_indices(trans_sweep)
             sweep_labels = self.labels_.reshape(-1, 2)[indices, 0]
-            sweep_labels[np.logical_or(~np.isfinite(sweep[0][:, 0]), 
-                                       sweep[0][:, 0] == 0, indices < 0)] = 0
+            sweep_labels[np.logical_or(~np.isfinite(trans_sweep[:, 0]), 
+                                       trans_sweep[:, 0] == 0, indices < 0)] = 0
             sweep_labels = sweep_labels.reshape(sweep[1].shape[:2])
             
             # extract depth and intensity channels, which are each 16 bits, splitting
