@@ -320,7 +320,10 @@ class IntegratedCloud:
                     self.grid_centers_.shape[1:])
             xy_to_update = np.array(xy_to_update)[:, None]
 
-        z_to_update = np.arange((self.target_z_ - self.label_grid_origin_z_) * self.label_grid_res_z_ - 0.001).astype(np.int32)
+        max_z_ind = (self.target_z_ - self.label_grid_origin_z_) * self.label_grid_res_z_ - 0.001
+        max_z_ind = np.minimum(max_z_ind, self.label_grid_size_z_ * self.label_grid_res_z_)
+
+        z_to_update = np.arange(max_z_ind).astype(np.int32)
         # get all combinations
         xyz_to_update = np.tile(xy_to_update, (1, z_to_update.shape[0]))
         xyz_to_update = np.vstack((xyz_to_update, np.repeat(z_to_update, xy_to_update[0].shape[0])))
