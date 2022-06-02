@@ -33,8 +33,13 @@ class SillCanvas(scene.SceneCanvas):
         self.update_text()
 
         self.cursor_size_ = 50
-        self.cursor_ = scene.visuals.Ellipse(center = (0, 0), radius = (self.cursor_size_,)*2, 
+        self.cursor_ = scene.visuals.Ellipse(center=(0, 0), radius=(self.cursor_size_,)*2, 
                 color=Color(alpha=0), border_color=Color('black'), border_width=5, parent=self.view_)
+
+        self.label_bound_box_ = scene.visuals.Rectangle(center=(0, 0), border_color=Color('black'),
+                border_width=10, color=Color(alpha=0),
+                height=self.cloud_.label_grid_size_xy_, width=self.cloud_.label_grid_size_xy_, 
+                parent=self.view_.scene)
 
         # disconnect camera, cannot pan/zoom by default
         self.view_.camera = scene.PanZoomCamera(aspect=1)

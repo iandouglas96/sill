@@ -116,6 +116,8 @@ class IntegratedCloud:
             # actually save
             stamp = pano[1].header.stamp.to_nsec()
             pano_img = pc_orig.reshape(*pano[0].shape[:2], 4).astype(np.float32)
+            # add info channel
+            pano_img = np.concatenate((pano_img, pano[0][:, :, 2, None]), axis=-1)
             self.save_scan(stamp, pano_img, pano_labels, "pano")
 
         print(f"Writing sweeps...")
@@ -154,7 +156,9 @@ class IntegratedCloud:
         if len(prefix) > 0:
             prefix = f"{prefix}_"
 
-        cv2.imwrite((scan_dir / f"{prefix}{stamp}.tiff").as_posix(), scan)
+        cv2.imwrite((scan_dir / f"{prefix}{stamp}.tiff").as_posix(), scan[:, :, :4])
+        if scan.shape[-1] > 4:
+            cv2.imwrite((scan_dir / f"{prefix}{stamp}_supp.tiff").as_posix(), scan[:, :, 4:])
 
         label_path = (label_dir / f"{prefix}{stamp}.png").as_posix()
         if self.load_:

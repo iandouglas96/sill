@@ -6,4 +6,4 @@ label_grid:
   size_xy: 200
   size_z: 30
 voxel_filter_res: 20
-pano_info_thresh: 8
+pano_info_thresh: -1
