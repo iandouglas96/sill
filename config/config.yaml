@@ -2,8 +2,8 @@ render_block_size: 10
 label_grid:
   res_xy: 10
   res_z: 2
-  origin_z: -2
+  origin_z: -10
   size_xy: 200
-  size_z: 30
+  size_z: 40
 voxel_filter_res: 20
 pano_info_thresh: -1
