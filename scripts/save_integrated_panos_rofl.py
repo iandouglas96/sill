@@ -21,7 +21,8 @@ class SaveIntegratedPanos:
     def __init__(self):
         self.class_lut_, self.color_lut_ = self.load_luts()
         self.cv_lut_ = self.get_cv_lut(self.color_lut_)
-        self.directory_ = Path(rospy.get_param('directory', 'labelled_panos'))
+        self.directory_ = Path(rospy.get_param('~directory', 'labelled_panos'))
+        rospy.loginfo(f"Saving to {self.directory_.as_posix()}")
 
         self.scale_ = None
         self.pano_sub_ = rospy.Subscriber("/os_node/rofl_odom/pano/img", Image, self.pano_cb)
