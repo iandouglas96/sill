@@ -40,7 +40,7 @@ class DataLoader:
                 sweep_data = [None, None, None]
 
             if 'pano' in topic:
-                if topic == '/os_node/rofl_odom/pano/image':
+                if topic == '/os_node/rofl_odom/pano/img':
                     pano_data[0] = np.frombuffer(msg.data, dtype=np.uint16).reshape(
                             msg.height, msg.width, -1) 
                 elif topic == '/os_node/rofl_odom/pano/camera_info':

@@ -16,7 +16,8 @@ def get_cv_lut(color_lut):
     return lut
 
 class IntegratedCloud:
-    def __init__(self, bagpath, start_ind, load, directory = None, config_path = None):
+    def __init__(self, bagpath, start_ind, load, directory = None, 
+            config_path = None, world_config_path = None):
         self.loader_ = DataLoader(bagpath).__iter__()
 
         if config_path is None:
@@ -25,6 +26,13 @@ class IntegratedCloud:
             config_path = package_path / Path('config') / Path('config.yaml')
         else:
             config_path = Path(config_path)
+
+        if world_config_path is None:
+            rospack = rospkg.RosPack()
+            package_path = Path(rospack.get_path('semantics_manager'))
+            world_config_path = package_path / Path('config') / Path('config.yaml')
+        else:
+            world_config_path = Path(world_config_path)
         config = yaml.load(open(config_path, 'r'), Loader=yaml.SafeLoader)
 
         self.render_block_size_ = config['render_block_size']
@@ -51,23 +59,26 @@ class IntegratedCloud:
         else:
             self.directory_ = Path(bagpath).with_name(Path(bagpath).stem + '_labels')
         self.directory_.mkdir(exist_ok = True)
-        self.class_lut_, self.color_lut_ = self.load_luts()
+        self.class_lut_, self.color_lut_ = self.load_luts(world_config_path)
         self.cv_lut_ = get_cv_lut(self.color_lut_)
         self.reset()
         self.go_to_start()
         self.add_new()
 
-    def load_luts(self):
+    def load_luts(self, world_config_path):
         rospack = rospkg.RosPack()
-        package_path = Path(rospack.get_path('sill'))
-        config = yaml.load(open(package_path / Path('config') / Path('classes.yaml'), 'r'),
-                           Loader=yaml.SafeLoader)
+        world_config = yaml.load(open(world_config_path, 'r'), Loader=yaml.SafeLoader)
+        sem_config_path = world_config_path.parent / Path(world_config['classes'])
+        sem_config = yaml.load(open(sem_config_path, 'r'), Loader=yaml.SafeLoader)
         class_lut = []
         color_lut = []
 
-        for cls in config:
-            class_lut.append(list(cls.keys())[0])
-            color_lut.append(Color(list(cls.values())[0]))
+        class_lut.append("unlabelled")
+        color_lut.append(Color('black'))
+
+        for cls in sem_config:
+            class_lut.append(cls['name'])
+            color_lut.append(Color(np.array(cls['color'])/255.))
 
         return class_lut, color_lut
 

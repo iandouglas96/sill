@@ -21,7 +21,7 @@ Setting `load` will cause the tool to look for existing labels, and if they exis
 The dataset bag should include the following topics and can be created by recording these topics while running [ouster_decoder](https://github.com/KumarRobotics/ouster_decoder) and rofl.
 ```
 /os_node/camera_info                : sensor_msgs/CameraInfo
-/os_node/image                      : sensor_msgs/Image
+/os_node/img                        : sensor_msgs/Image
 /os_node/rofl_odom/pano/camera_info : sensor_msgs/CameraInfo
 /os_node/rofl_odom/pano/image       : sensor_msgs/Image
 /os_node/rofl_odom/sweep/cloud      : sensor_msgs/PointCloud2

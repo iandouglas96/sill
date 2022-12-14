@@ -11,14 +11,15 @@ from time import perf_counter, time
 
 class SillCanvas(scene.SceneCanvas):
     def __init__(self, bagpath, start_ind = 0, load = False, num_panos_load = 10, 
-            directory = None, config_path = None):
+            directory = None, config_path = None, world_config_path = None):
         scene.SceneCanvas.__init__(self, keys='interactive')
         self.unfreeze()
 
         self.num_panos_load_ = num_panos_load
 
         self.view_ = self.central_widget.add_view(bgcolor='white')
-        self.cloud_ = IntegratedCloud(bagpath, start_ind, load, directory, config_path)
+        self.cloud_ = IntegratedCloud(bagpath, start_ind, load, directory, 
+                config_path, world_config_path)
         self.cloud_render_ = {}
         self.last_mouse_point_ = np.zeros(2)
         self.current_class_ = 1
@@ -163,8 +164,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_panos', type=int, default=10)
     parser.add_argument('--output_dir', type=str, default=None)
     parser.add_argument('--config', type=str, default=None)
+    parser.add_argument('--world_config', type=str, default=None)
     args = parser.parse_args()
 
     sc = SillCanvas(args.bag, args.start, args.load, args.num_panos, 
-                    args.output_dir, args.config)
+                    args.output_dir, args.config, args.world_config)
     app.run()
