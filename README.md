@@ -6,6 +6,7 @@
 * NumPy
 * SciPy
 * Open3D
+* [semantics_manager](https://github.com/KumarRobotics/semantics_manager)
 
 ## Usage
 
@@ -18,7 +19,7 @@ The `config` flag selects the location of the config file (the default is `confi
 The `output_dir` flag manually sets the location of the output directory, overriding the default.
 Setting `load` will cause the tool to look for existing labels, and if they exist will prelabel the cloud.
 
-The dataset bag should include the following topics and can be created by recording these topics while running [ouster_decoder](https://github.com/KumarRobotics/ouster_decoder) and rofl.
+The dataset bag should include the following topics and can be created by recording these topics while running [ouster_decoder](https://github.com/KumarRobotics/ouster_decoder) and [rofl](https://github.com/versatran01/rofl-beta).
 ```
 /os_node/camera_info                : sensor_msgs/CameraInfo
 /os_node/img                        : sensor_msgs/Image
